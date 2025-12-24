@@ -1,14 +1,13 @@
 import Constants from 'expo-constants';
-import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context'; // Added
 import { useAuth } from '../context/AuthContext';
-// import { GoogleSignin } from '@react-native-google-signin/google-signin'; // Setup later
 
 export default function LoginScreen({ navigation }) {
-    const { login, checkAuth, isAuthenticated } = useAuth();
+    const { login, isAuthenticated } = useAuth();
     const [email, setEmail] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);  
 
     // Check session on mount
     useEffect(() => {
@@ -83,95 +82,47 @@ export default function LoginScreen({ navigation }) {
     };
 
     return (
-        <View className="flex-1 bg-white">
+        <SafeAreaView className="flex-1 bg-white">
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
             >
                 <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-
-                    {/* Top Section - Decorative Background or spacing */}
-                    <View className="h-1/3 bg-blue-50 w-full items-center justify-center rounded-b-[40px] mb-8 overflow-hidden relative">
-                        {/* Abstract circles/decoration to mimic the 'grid' feel or just a nice header */}
+                    {/* Hero Section */}
+                    <View className="h-[35%] bg-blue-50 w-full items-center justify-center rounded-b-[40px] mb-8 overflow-hidden relative">
                         <View className="absolute -top-10 -left-10 w-40 h-40 bg-blue-100 rounded-full opacity-50" />
-                        <View className="absolute top-20 right-10 w-20 h-20 bg-indigo-100 rounded-full opacity-50" />
-                        <View className="absolute bottom-10 -left-5 w-24 h-24 bg-blue-200 rounded-full opacity-30" />
-
-                        {/* Logo */}
-                        <View className="w-48 h-48 items-center justify-center p-2 mb-0">
+                        <View className="w-40 h-40 items-center justify-center p-2">
                             <Image className="w-full h-full rounded-xl" source={require('../../assets/logo.png')} />
                         </View>
-                        <Text className="text-3xl font-extrabold text-gray-900 text-center mb-3">
-                            Mechanic Setu
-                        </Text>
+                        <Text className="text-3xl font-extrabold text-gray-900 text-center">Mechanic Setu</Text>
                     </View>
 
                     <View className="px-6 flex-1">
-
-                        {/* Titles */}
                         <View className="items-center mb-8">
-
-                            <Text className="text-xl text-gray-600 font-medium">
-                                Log in or Sign up
-                            </Text>
+                            <Text className="text-xl text-gray-600 font-medium">Log in or Sign up</Text>
                         </View>
 
-                        {/* Form Section */}
                         <View className="w-full space-y-6">
-                            {/* Email Input */}
-                            <View>
-                                <TextInput
-                                    placeholder="Enter your email"
-                                    placeholderTextColor="#9ca3af"
-                                    className="w-full px-5 py-4 bg-white rounded-xl text-gray-900 border border-gray-300 focus:border-black focus:border-2 mb-2 text-lg"
-                                    value={email}
-                                    onChangeText={setEmail}
-                                    autoCapitalize="none"
-                                    keyboardType="email-address"
-                                />
-                            </View>
-
-                            {/* Terms Text - Placed BEFORE the button as requested */}
-                            <View>
-                                <Text className="text-center text-gray-500 text-xs mb-2 mt-3 leading-4">
-                                    By continuing, you agree to our{' '}
-                                    <Text className="underline decoration-gray-400">Terms of service</Text>
-                                    {' & '}
-                                    <Text className="underline decoration-gray-400">Privacy policy</Text>
-                                </Text>
-                            </View>
-
-                            {/* Continue Button */}
+                            <TextInput
+                                placeholder="Enter your email"
+                                className="w-full px-5 py-4 bg-white rounded-xl text-gray-900 border border-gray-300 mb-4 text-lg"
+                                value={email}
+                                onChangeText={setEmail}
+                                autoCapitalize="none"
+                                keyboardType="email-address"
+                            />
+                            
                             <TouchableOpacity
                                 onPress={handleEmailLogin}
                                 disabled={loading}
-                                className={`w-full py-4 rounded-xl items-center justify-center ${loading ? 'bg-gray-400' : 'bg-gray-900'} shadow-sm active:scale-95 transition-transform`}
+                                className={`w-full py-4 rounded-xl items-center justify-center ${loading ? 'bg-gray-400' : 'bg-gray-900'}`}
                             >
-                                <Text className="text-white font-bold text-lg tracking-wide">
-                                    {loading ? 'Processing...' : 'Continue'}
-                                </Text>
+                                <Text className="text-white font-bold text-lg">{loading ? 'Processing...' : 'Continue'}</Text>
                             </TouchableOpacity>
-
                         </View>
-
-                        {/* Google Login (Optional - Styled minimally to fit new theme) */}
-                        <TouchableOpacity
-                            onPress={handleGoogleLogin}
-                            className="mt-4 w-full py-3 bg-white border border-gray-200 rounded-xl flex-row justify-center items-center"
-                        >
-                            <Text className="text-gray-700 font-semibold">Sign in with Google</Text>
-                        </TouchableOpacity>
-
                     </View>
-
-                    {/* Footer Section */}
-                    <View className="py-6 items-center mb-12">
-                        <Text className="text-gray-400 text-xs mb-1">Version {version}</Text>
-                        <Text className="text-gray-400 text-xs font-semibold tracking-widest">Man 🤞 Dhruv</Text>
-                    </View>
-
                 </ScrollView>
             </KeyboardAvoidingView>
-        </View>
+        </SafeAreaView>
     );
 }

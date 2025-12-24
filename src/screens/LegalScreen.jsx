@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, ScrollView, StatusBar, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StatusBar, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context'; // Added
 
 const LegalScreen = ({ navigation, route }) => {
     const { type, title } = route.params || {};
@@ -9,50 +10,23 @@ const LegalScreen = ({ navigation, route }) => {
             case 'terms':
                 return (
                     <View>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            Welcome to Mechanic Setu. By using our app, you agree to the following terms and conditions...
-                        </Text>
+                        <Text className="text-gray-600 mb-4 leading-6">Welcome to Mechanic Setu. By using our app, you agree to the following terms and conditions...</Text>
                         <Text className="font-bold text-gray-800 mb-2">1. Service Usage</Text>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            You agree to use the service for lawful purposes only. Mechanic Setu connects users with mechanics...
-                        </Text>
-                        <Text className="font-bold text-gray-800 mb-2">2. User Responsibility</Text>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            Users are responsible for their vehicle and personal safety. Mechanic Setu is a platform facilitator...
-                        </Text>
-                        {/* Add more dummy content or real content if available */}
+                        <Text className="text-gray-600 mb-4 leading-6">You agree to use the service for lawful purposes only...</Text>
                     </View>
                 );
             case 'privacy':
                 return (
                     <View>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            Your privacy is important to us. This Privacy Policy explains how we collect, use, and protect your information.
-                        </Text>
+                        <Text className="text-gray-600 mb-4 leading-6">Your privacy is important to us...</Text>
                         <Text className="font-bold text-gray-800 mb-2">Data Collection</Text>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            We collect location data to connect you with nearby mechanics. We also collect contact information for account management.
-                        </Text>
-                        <Text className="font-bold text-gray-800 mb-2">Data Security</Text>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            We implement security measures to ensure your data is safe...
-                        </Text>
+                        <Text className="text-gray-600 mb-4 leading-6">We collect location data to connect you with nearby mechanics...</Text>
                     </View>
                 );
             case 'about':
                 return (
                     <View>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            Mechanic Setu is dedicated to helping vehicle owners find reliable mechanics quickly and efficiently.
-                        </Text>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            Our mission is to bridge the gap between stranded drivers and skilled mechanics, ensuring help is always within reach.
-                        </Text>
-                        <Text className="font-bold text-gray-800 mb-2">Contact Us</Text>
-                        <Text className="text-gray-600 mb-4 leading-6">
-                            Email: support@mechanicsetu.com{'\n'}
-                            Phone: +91 12345 67890
-                        </Text>
+                        <Text className="text-gray-600 mb-4 leading-6">Mechanic Setu is dedicated to helping vehicle owners find reliable mechanics quickly...</Text>
                     </View>
                 );
             default:
@@ -61,10 +35,11 @@ const LegalScreen = ({ navigation, route }) => {
     };
 
     return (
-        <View className="flex-1 bg-white">
+        <SafeAreaView className="flex-1 bg-white">
             <StatusBar barStyle="dark-content" />
-            {/* Header */}
-            <View className={`bg-white px-4 pb-4 border-b border-gray-200 ${Platform.OS === 'android' ? 'pt-12' : 'pt-4'}`}>
+            
+            {/* Standard Header Pattern */}
+            <View className="bg-white px-4 pb-4 border-b border-gray-200 pt-2">
                 <View className="flex-row items-center">
                     <TouchableOpacity
                         onPress={() => navigation.goBack()}
@@ -82,7 +57,7 @@ const LegalScreen = ({ navigation, route }) => {
                 {getContent(type)}
                 <View className="h-10" />
             </ScrollView>
-        </View>
+        </SafeAreaView>
     );
 };
 

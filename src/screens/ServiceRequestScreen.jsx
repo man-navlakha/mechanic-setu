@@ -1,4 +1,3 @@
-
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
@@ -10,12 +9,14 @@ import {
     KeyboardAvoidingView,
     Platform,
     ScrollView,
+    StatusBar,
     Text,
     TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
-import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
+// FIX 1: Explicitly import Marker here
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, { SlideInRight, SlideOutLeft } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import api from '../utils/api';
@@ -62,7 +63,6 @@ const PROBLEMS = {
 };
 
 const FORM_STORAGE_KEY = 'punctureRequestFormData';
-
 export default function ServiceRequestScreen() {
     const navigation = useNavigation();
     const [step, setStep] = useState(1);
@@ -73,10 +73,17 @@ export default function ServiceRequestScreen() {
     const [formData, setFormData] = useState({
         vehicleType: '',
         location: 'Selecting location...',
-        latitude: 23.0225, // Default Ahmedabad
+        latitude: 23.0225,
         longitude: 72.5714,
         problem: '',
         additionalNotes: ''
+    });
+
+    const [mapRegion, setMapRegion] = useState({
+        latitude: 23.0225,
+        longitude: 72.5714,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
     });
 
     // Load saved data
@@ -184,40 +191,37 @@ export default function ServiceRequestScreen() {
 
     const handleCurrentLocation = async () => {
         setFormData(prev => ({ ...prev, location: 'Fetching current location...' }));
-
         try {
             let { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                alert('Permission to access location was denied');
+                alert('Permission denied');
                 return;
             }
 
-            let location = await Location.getCurrentPositionAsync({});
+            let location = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+            });
             const { latitude, longitude } = location.coords;
             const address = await getAddressFromCoords(latitude, longitude);
 
-            setFormData(prev => ({
-                ...prev,
+            const newRegion = {
                 latitude,
                 longitude,
-                location: address
-            }));
+                latitudeDelta: 0.005,
+                longitudeDelta: 0.005,
+            };
+
+            setFormData(prev => ({ ...prev, latitude, longitude, location: address }));
+            setMapRegion(newRegion);
 
             if (mapRef.current) {
-                mapRef.current.animateToRegion({
-                    latitude,
-                    longitude,
-                    latitudeDelta: 0.005,
-                    longitudeDelta: 0.005,
-                }, 1000);
+                mapRef.current.animateToRegion(newRegion, 1000);
             }
         } catch (error) {
             console.error(error);
-            alert("Could not fetch location");
             setFormData(prev => ({ ...prev, location: 'Location unavailable' }));
         }
     };
-
     // --- RENDER STEPS ---
 
     // Step 1: Vehicle
@@ -262,20 +266,12 @@ export default function ServiceRequestScreen() {
                 ref={mapRef}
                 provider={PROVIDER_GOOGLE}
                 style={{ flex: 1 }}
-                initialRegion={{
-                    latitude: formData.latitude || 23.0225,
-                    longitude: formData.longitude || 72.5714,
-                    latitudeDelta: 0.005,
-                    longitudeDelta: 0.005,
-                }}
+                region={mapRegion} 
                 onRegionChangeComplete={async (region) => {
-                    setFormData(prev => ({
-                        ...prev,
-                        latitude: region.latitude,
-                        longitude: region.longitude,
-                        location: "Identifying location..."
-                    }));
+                    // Update region state to keep UI in sync
+                    setMapRegion(region);
 
+                    // Fetch address and update form data
                     const address = await getAddressFromCoords(region.latitude, region.longitude);
                     setFormData(prev => ({
                         ...prev,
@@ -285,11 +281,21 @@ export default function ServiceRequestScreen() {
                     }));
                 }}
             >
+                {/* FIX 2: Use destructured Marker component instead of MapView.Marker */}
+                <Marker 
+                    coordinate={{ latitude: formData.latitude, longitude: formData.longitude }}
+                    opacity={0} 
+                />
             </MapView>
 
-            <View pointerEvents="none" className="absolute top-0 bottom-0 left-0 right-0 items-center justify-center -mt-8">
-                <Ionicons name="location" size={48} color="#ef4444" />
-                <View className="w-4 h-4 bg-red-400/30 rounded-full" />
+            {/* Visual Pin Overlay - EXACT center for iOS accuracy */}
+            <View pointerEvents="none" className="absolute top-0 bottom-0 left-0 right-0 flex items-center justify-center">
+                <View className="w-8 h-8 bg-blue-400/30 rounded-full flex items-center justify-center">
+                    <View className="w-6 h-6 bg-blue-600/80 rounded-full flex items-center justify-center">
+                        <View className="w-4 h-4 bg-blue-800 rounded-full" />
+                    </View>
+                </View>
+                <View className="w-1 h-1 bg-black/20 rounded-full mt-1" />
             </View>
 
             <TouchableOpacity
@@ -302,12 +308,12 @@ export default function ServiceRequestScreen() {
             <View className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-6 shadow-2xl">
                 <Text className="text-gray-400 text-xs font-bold uppercase tracking-wide mb-1">Confirm Location</Text>
                 <Text className="text-lg font-bold text-gray-900 mb-4" numberOfLines={1}>
-                    {formData.location}
+                    {formData.location === "Identifying location..." ? "..." : formData.location}
                 </Text>
                 <View className="flex-row items-center space-x-2 bg-blue-50 p-3 rounded-xl">
                     <Ionicons name="information-circle" size={20} color="#3b82f6" />
                     <Text className="text-blue-700 text-xs flex-1">
-                        Move the map to place the pin at your exact breakdown location.
+                        Move the map to center the pin at your location.
                     </Text>
                 </View>
             </View>
@@ -436,45 +442,34 @@ export default function ServiceRequestScreen() {
         </Animated.View>
     );
 
-    return (
+   return (
         <SafeAreaView className="flex-1 bg-white">
-            <TouchableOpacity
-                activeOpacity={1}
-                onLongPress={() => setShowDebugger(!showDebugger)}
-                className="absolute top-10 right-4 z-50 p-2"
-            >
-                {showDebugger && <Text className="text-xs text-red-500 bg-white p-1 rounded border">Debug</Text>}
-            </TouchableOpacity>
+            <StatusBar barStyle="dark-content" />
+            
+            {/* Header Pattern */}
+            <View className="bg-white px-4 pb-4 border-b border-gray-100 pt-2">
+                <View className="flex-row items-center">
+                    <TouchableOpacity 
+                        onPress={() => step > 1 ? handlePrev() : navigation.goBack()} 
+                        className="p-2 bg-gray-50 rounded-full mr-4"
+                    >
+                        <Ionicons name="arrow-back" size={24} color="#1f2937" />
+                    </TouchableOpacity>
 
-            {showDebugger && (
-                <View className="absolute top-20 right-4 z-50 bg-black/80 p-4 rounded-xl w-64">
-                    <Text className="text-white font-bold mb-2">Form Data (Debug)</Text>
-                    <Text className="text-green-400 text-xs font-mono">
-                        {JSON.stringify(formData, null, 2)}
-                    </Text>
+                    <View className="flex-1 flex-row items-center">
+                        <View className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden flex-row mr-3">
+                            <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 1 ? 'w-[20%]' : 'w-0'}`} />
+                            <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 2 ? 'w-[20%]' : 'w-0'}`} />
+                            <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 3 ? 'w-[20%]' : 'w-0'}`} />
+                            <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 4 ? 'w-[20%]' : 'w-0'}`} />
+                            <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 5 ? 'w-[20%]' : 'w-0'}`} />
+                        </View>
+                        <Text className="text-gray-400 font-bold text-xs">Step {step}/5</Text>
+                    </View>
                 </View>
-            )}
-
-            {/* Header */}
-            <View className="flex-row items-center px-4 py-4 border-b border-gray-100">
-                <TouchableOpacity onPress={() => step > 1 ? handlePrev() : navigation.goBack()} className="p-2 bg-gray-50 rounded-full">
-                    <Ionicons name="arrow-back" size={24} color="#1f2937" />
-                </TouchableOpacity>
-
-                {/* Progress Bar 5 steps */}
-                <View className="flex-1 mx-4 h-2 bg-gray-100 rounded-full overflow-hidden flex-row">
-                    <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 1 ? 'w-[20%]' : 'w-0'}`} />
-                    <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 2 ? 'w-[20%]' : 'w-0'}`} />
-                    <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 3 ? 'w-[20%]' : 'w-0'}`} />
-                    <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 4 ? 'w-[20%]' : 'w-0'}`} />
-                    <View className={`h-full bg-blue-500 transition-all duration-300 ${step >= 5 ? 'w-[20%]' : 'w-0'}`} />
-                </View>
-
-                <Text className="text-gray-400 font-bold text-xs">Step {step}/5</Text>
             </View>
 
-            {/* Content Area */}
-            <View className="flex-1 bg-white">
+            <View className="flex-1 bg-white mb-3">
                 {step === 1 && renderStep1()}
                 {step === 2 && renderStep2()}
                 {step === 3 && renderStep3()}
@@ -482,7 +477,6 @@ export default function ServiceRequestScreen() {
                 {step === 5 && renderStep5()}
             </View>
 
-            {/* Bottom Footer Action */}
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <View className="p-4 border-t border-gray-100 bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.05)] z-20">
                     <TouchableOpacity
@@ -490,9 +484,7 @@ export default function ServiceRequestScreen() {
                         disabled={!canProceed() || loading}
                         className={`w-full py-4 rounded-2xl flex-row items-center justify-center shadow-lg active:scale-[0.98] ${canProceed() ? 'bg-blue-600 shadow-blue-200' : 'bg-gray-300 shadow-transparent'}`}
                     >
-                        {loading ? (
-                            <ActivityIndicator color="white" />
-                        ) : (
+                        {loading ? <ActivityIndicator color="white" /> : (
                             <>
                                 <Text className="text-white font-bold text-lg mr-2">
                                     {step === 5 ? 'Submit Request' : 'Next Step'}

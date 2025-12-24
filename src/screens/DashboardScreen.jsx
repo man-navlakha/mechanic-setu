@@ -7,6 +7,7 @@ import { Dimensions, Image, StatusBar, Text, TouchableOpacity, View } from 'reac
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import ConnectionStatus from '../components/ConnectionStatus';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
@@ -136,7 +137,11 @@ const DashboardScreen = ({ navigation }) => {
         latitudeDelta: 0.1, // Zoomed out initially
         longitudeDelta: 0.1,
     });
-
+    // This listener runs every time the Dashboard becomes visible again
+    const unsubscribe = navigation.addListener('focus', () => {
+        checkActiveJob(); // This will now find 'null' because you cleared the key
+        getUserLocation();
+    });
     const getStatusIcon = (type) => type === 'car' ? 'car-sport' : 'motorbike';
 
     const mapStyle = [
@@ -171,19 +176,26 @@ const DashboardScreen = ({ navigation }) => {
                 <StatusBar barStyle="dark-content" />
 
                 {/* Header - Transparent/Overlay */}
-                <View className="absolute top-0 border-b border-gray-200 left-0 right-0 z-10 pt-12 pb-4 h-full max-h-20 px-4 flex-row items-center justify-between bg-white/90 shadow-sm">
-                    <View className="flex-row items-center">
-                        <Image
-                            source={require('../../assets/logo.png')}
-                            className="w-20 h-20 -m-8 -ml-2 -mr-2 -mb-2"
-                            resizeMode="contain"
-                        />
-                        <Text className="text-xl font-bold -mt-4 text-gray-900 tracking-wide ml-3">Mechanic Setu</Text>
-                    </View>
+                <View className="absolute top-0 left-0 right-0 z-10">
+                    <SafeAreaView className="bg-white/90 shadow-sm border-b border-gray-200">
+                        <View className="px-4 py-3 flex-row items-center justify-between">
+                            <View className="flex-row items-center">
+                                <Image
+                                    source={require('../../assets/logo.png')}
+                                    className="w-10 h-10"
+                                    resizeMode="contain"
+                                />
+                                <Text className="text-xl font-bold text-gray-900 tracking-wide ml-2">Mechanic Setu</Text>
+                            </View>
 
-                    <TouchableOpacity onPress={() => navigation.navigate('Settings')} className="p-2 -mt-8 bg-gray-100 rounded-full">
-                        <Ionicons name="settings-outline" size={24} color="#374151" />
-                    </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('Settings')}
+                                className="p-2 bg-gray-100 rounded-full"
+                            >
+                                <Ionicons name="settings-outline" size={24} color="#374151" />
+                            </TouchableOpacity>
+                        </View>
+                    </SafeAreaView>
                 </View>
 
                 {/* Map Background */}
