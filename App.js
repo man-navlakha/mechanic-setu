@@ -19,6 +19,7 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import LegalScreen from './src/screens/LegalScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import MechanicFoundScreen from './src/screens/MechanicFoundScreen';
+import NearbyMechanicsScreen from './src/screens/NearbyMechanicsScreen';
 import OTPScreen from './src/screens/OTPScreen';
 import ProcessFormScreen from './src/screens/ProcessFormScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -57,6 +58,7 @@ const Navigation = () => {
                         <Stack.Screen name="FindingMechanic" component={FindingMechanicScreen} />
                         <Stack.Screen name="MechanicFound" component={MechanicFoundScreen} />
                         <Stack.Screen name="Settings" component={SettingsScreen} />
+                        <Stack.Screen name="NearbyMechanics" component={NearbyMechanicsScreen} />
                         <Stack.Screen name="Legal" component={LegalScreen} />
                     </>
                 )}

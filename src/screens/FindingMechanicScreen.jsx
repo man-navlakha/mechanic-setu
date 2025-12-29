@@ -130,9 +130,15 @@ const FindingMechanicScreen = () => {
         }
 
         // 3. Error Cases: No Mechanic Found OR Job Expired
-        else if (type === 'no_mechanic_found' || type === 'job_expired') {
+        else if (type === 'no_mechanic_found') {
+            navigation.navigate("NearbyMechanics", {
+                jobDetails: jobDetails || { vehicleType: paramVehicle, problem: paramProblem },
+                userLocation: { latitude, longitude }
+            });
+        }
+        else if (type === 'job_expired') {
 
-            const alertTitle = type === 'job_expired' ? "Request Expired" : "Searching Failed";
+            const alertTitle = "Request Expired";
             const alertMessage = message || "Please try again later.";
 
             Alert.alert(
