@@ -28,6 +28,7 @@ import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../context/WebSocketContext';
 import api from '../utils/api';
 
+
 const { width, height } = Dimensions.get('window');
 
 const SNAP_POINTS = {
@@ -94,7 +95,7 @@ const FindingMechanicScreen = () => {
         if (!lastMessage || !navigation.isFocused()) return;
 
         console.log("[FindingMechanic] New Message:", lastMessage);
-        const { type, service_request, message } = lastMessage;
+        const { type, service_request, message, job_id } = lastMessage;
 
         // 1. Handle Job Confirmation (Confirmation from server)
         if (type === 'new_job' && service_request) {
@@ -131,6 +132,13 @@ const FindingMechanicScreen = () => {
 
         // 3. Error Cases: No Mechanic Found OR Job Expired
         else if (type === 'no_mechanic_found') {
+            // Check if this error matches the current request
+            const msgJobId = job_id || (service_request?.id);
+            if (msgJobId && String(msgJobId) !== String(requestId)) {
+                console.log(`[FindingMechanic] Ignoring no_mechanic_found for mismatched job: ${msgJobId} (Current: ${requestId})`);
+                return;
+            }
+
             navigation.navigate("NearbyMechanics", {
                 jobDetails: jobDetails || { vehicleType: paramVehicle, problem: paramProblem },
                 userLocation: { latitude, longitude }
@@ -247,7 +255,10 @@ const FindingMechanicScreen = () => {
             }
 
             console.log("Request Cancelled");
-            navigation.popToTop();
+            navigation.reset({
+                index: 0,
+                routes: [{ name: 'Main' }],
+            });
 
         } catch (error) {
             console.error("Cancellation failed", error);

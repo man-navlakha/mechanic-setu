@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import Feather from '@expo/vector-icons/Feather';
-// import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useRef, useState } from 'react';
+
 import {
     ActivityIndicator,
     Alert,
@@ -22,7 +23,7 @@ import { useWebSocket } from '../context/WebSocketContext';
 import { getMapAds } from '../utils/adsCache';
 import api from '../utils/api';
 
-import { resetRoot } from '../utils/navigationRef';
+
 
 const { width, height } = Dimensions.get('window');
 
@@ -65,7 +66,8 @@ function calculateETA(userCoords, mechCoords) {
     return timeMinutes + 1;
 }
 
-const MechanicFoundScreen = ({ navigation, route }) => {
+const MechanicFoundScreen = ({ route }) => {
+    const navigation = useNavigation();
     const {
         data: routeData,
         userLocation: paramLocation,
@@ -217,7 +219,7 @@ const MechanicFoundScreen = ({ navigation, route }) => {
 
                     // Navigate home after delay
                     setTimeout(() => {
-                        resetRoot('Main');
+                        navigation.navigate('Main');
                     }, 4000);
                     break;
                 case 'job_cancelled':
@@ -231,7 +233,7 @@ const MechanicFoundScreen = ({ navigation, route }) => {
 
                     // Navigate home after delay
                     setTimeout(() => {
-                        resetRoot('Main');
+                        navigation.navigate('Main');
                     }, 4000);
                     break;
                 // case 'no_mechanic_found':
@@ -274,16 +276,16 @@ const MechanicFoundScreen = ({ navigation, route }) => {
                 Alert.alert("Notice", msg, [
                     {
                         text: "OK",
-                        onPress: () => resetRoot('Main') // Safe global reset
+                        onPress: () => navigation.navigate('Main')
                     }
                 ]);
             } else {
-                resetRoot('Main');
+                navigation.navigate('Main');
             }
         } catch (err) {
             console.error("Exit Error:", err);
             // Fallback: Try to navigate anyway
-            resetRoot('Main');
+            navigation.navigate('Main');
         }
     };
 
@@ -612,7 +614,7 @@ const MechanicFoundScreen = ({ navigation, route }) => {
                 <SafeAreaView className="absolute top-0 left-0 right-0 z-10 bg-green-600 shadow-md pb-4 pt-2">
                     <View className="px-4 flex-row items-center pb-3 pt-4 mb-2">
                         <TouchableOpacity
-                            onPress={() => navigation.goBack('/')}
+                            onPress={() => navigation.goBack()}
                             className="mr-2"
                         >
                             <Ionicons name="chevron-back" size={28} color="white" />
