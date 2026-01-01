@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Linking, SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
-import Animated, { FadeInUp, ZoomIn } from 'react-native-reanimated';
+import { ActivityIndicator, FlatList, Image, Linking, Text, TouchableOpacity, View } from 'react-native';
+import Animated, { FadeInDown, FadeInUp, ZoomIn } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { resetRoot } from '../utils/navigationRef';
 
 const RAPID_API_KEY = '8c4441f91cmsh031f6b727121205p18ef90jsndb7ed43006d7';

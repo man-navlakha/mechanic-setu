@@ -47,7 +47,11 @@ api.interceptors.request.use(
 // Response Interceptor: Handling Refreshes & Logging
 api.interceptors.response.use(
     (response) => {
-        console.log(`[API Response] ${response.status} ${response.config.url}`, response.data);
+        if (response.config.url.includes("Profile/UserHistory/")) {
+            console.log(`[API Response] ${response.status} ${response.config.url}`);
+        } else {
+            console.log(`[API Response] ${response.status} ${response.config.url}`, response.data);
+        }
         return response;
     },
     async (error) => {

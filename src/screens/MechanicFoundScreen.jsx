@@ -1,9 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import Feather from '@expo/vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useRef, useState } from 'react';
-
 import {
     ActivityIndicator,
     Alert,
@@ -11,18 +10,17 @@ import {
     FlatList,
     Image,
     Linking,
-    Modal,
-    SafeAreaView,
     Text,
     TouchableOpacity, View
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming, ZoomIn } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWebSocket } from '../context/WebSocketContext';
 import { getMapAds } from '../utils/adsCache';
-import api from '../utils/api';
 import { navigate, resetRoot } from '../utils/navigationRef';
+import { updateMechanicTrackingNotification } from '../utils/notifications';
 
 
 
@@ -69,6 +67,7 @@ function calculateETA(userCoords, mechCoords) {
 
 const MechanicFoundScreen = ({ route }) => {
     const navigation = useNavigation();
+    const isFocused = useIsFocused();
     const {
         data: routeData,
         userLocation: paramLocation,
@@ -107,8 +106,6 @@ const MechanicFoundScreen = ({ route }) => {
         loadAds();
     }, []);
 
-    const [isCancelModalOpen, setCancelModalOpen] = useState(false);
-    const [selectedReason, setSelectedReason] = useState('');
     const [isJobCompleted, setIsJobCompleted] = useState(false);
     const [isJobCancelledState, setIsJobCancelledState] = useState(false);
     const [isMechanicArrived, setIsMechanicArrived] = useState(false);
@@ -203,7 +200,7 @@ const MechanicFoundScreen = ({ route }) => {
     }, [routeData]);
     // WebSocket Updates (kept same)
     useEffect(() => {
-        if (!lastMessage || !requestId) return;
+        if (!lastMessage || !requestId || !isFocused) return;
 
         // Mechanic Location Update
         if (lastMessage.type === 'mechanic_location_update' && String(lastMessage.request_id) === String(requestId)) {
@@ -254,13 +251,28 @@ const MechanicFoundScreen = ({ route }) => {
                     break;
             }
         }
-    }, [lastMessage, requestId]);
+    }, [lastMessage, requestId, isFocused]);
 
-    // Calculate ETA (kept same)
+    // Calculate ETA and update notification
     useEffect(() => {
-        if (userLocation && mechanicLocation) {
+        if (userLocation && mechanicLocation && mechanic) {
             const eta = calculateETA(userLocation, mechanicLocation);
             setEstimatedTime(eta);
+
+            // Calculate distance
+            const distance = getDistanceFromLatLonInKm(
+                userLocation.latitude,
+                userLocation.longitude,
+                mechanicLocation.latitude,
+                mechanicLocation.longitude
+            );
+
+            // Update live notification with new ETA
+            updateMechanicTrackingNotification({
+                mechanicName: `${mechanic.first_name} ${mechanic.last_name}`,
+                estimatedTime: eta,
+                distance: distance
+            });
 
             // Fit map updates with padding for bottom sheet
             if (mapRef.current) {
@@ -305,36 +317,6 @@ const MechanicFoundScreen = ({ route }) => {
     useEffect(() => {
         console.log("[MechanicFoundScreen] Mounted. Navigation Prop:", navigation ? "Present" : "Missing");
     }, []);
-
-    const handleCancelConfirm = async () => {
-        if (!selectedReason || !requestId) return;
-
-        try {
-            // 1. Notify the Backend
-            await api.post(`jobs/CancelServiceRequest/${requestId}/`, {
-                cancellation_reason: `User - ${selectedReason}`,
-            });
-
-            // 2. Notify via WebSocket
-            if (socket?.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({
-                    type: 'cancel_request',
-                    request_id: parseInt(requestId)
-                }));
-            }
-
-            // 3. Close modal
-            setCancelModalOpen(false);
-
-            // 4. IMPORTANT: Do NOT navigate here. 
-            // The WebSocket useEffect below will see the 'job_cancelled' 
-            // message and call clearAndExit() for you.
-        } catch (error) {
-            console.error("Cancellation Error:", error);
-            Alert.alert("Error", "Failed to cancel request.");
-            setCancelModalOpen(false);
-        }
-    };
 
     // --- ADS DATA & RENDERER ---
     const RECOMMENDED_ADS = [
@@ -615,7 +597,7 @@ const MechanicFoundScreen = ({ route }) => {
                 </MapView>
 
                 {/* Top Green Header */}
-                <SafeAreaView className="absolute top-0 left-0 right-0 z-10 bg-green-600 shadow-md pb-4 pt-2">
+                <SafeAreaView className={`absolute top-0 left-0 right-0 z-10 ${isMechanicArrived ? 'bg-blue-600' : 'bg-green-600'} shadow-md pb-4 pt-2`}>
                     <View className="px-4 flex-row items-center pb-3 pt-4 mb-2">
                         <TouchableOpacity
                             onPress={() => navigation.goBack()}
@@ -625,7 +607,7 @@ const MechanicFoundScreen = ({ route }) => {
                         </TouchableOpacity>
 
                         <View className="flex-1 items-center mr-8">
-                            <Text className="text-green-100 text-xs font-bold uppercase tracking-wider mb-0.5">
+                            <Text className={isMechanicArrived ? 'text-blue-100 text-xs font-bold uppercase tracking-wider mb-0.5' : 'text-white text-xs font-bold uppercase tracking-wider mb-0.5'}>
                                 {isMechanicArrived ? 'Status Update' : 'Mechanic is on the way'}
                             </Text>
                             <Text className="text-white text-2xl font-extrabold">
@@ -677,54 +659,12 @@ const MechanicFoundScreen = ({ route }) => {
                                 />
                             </View>
 
-                            <TouchableOpacity onPress={() => setCancelModalOpen(true)} className="w-full py-4 rounded-xl bg-red-50 flex-row items-center justify-center border border-red-100"><Text className="text-red-500 font-bold">Cancel Request</Text></TouchableOpacity>
+                            <TouchableOpacity onPress={() => navigation.navigate('Cancellation', { requestId })} className="w-full py-4 rounded-xl bg-red-50 flex-row items-center justify-center border border-red-100"><Text className="text-red-500 font-bold">Cancel Request</Text></TouchableOpacity>
                         </View>
                     </Animated.View>
                 </GestureDetector>
 
-                {/* Cancel Modal (kept same) */}
-                <Modal
-                    visible={isCancelModalOpen}
-                    transparent
-                    animationType="fade"
-                    onRequestClose={() => setCancelModalOpen(false)}
-                >
-                    <View className="flex-1 bg-black/50 justify-end">
-                        <View className="bg-white rounded-t-3xl p-6 pb-12">
-                            <Text className="text-xl font-bold text-gray-900 mb-4">Why are you cancelling?</Text>
 
-                            {['Mechanic delayed', 'Changed my mind', 'Found help elsewhere', 'Other'].map((reason) => (
-                                <TouchableOpacity
-                                    key={reason}
-                                    onPress={() => setSelectedReason(reason)}
-                                    className={`flex-row items-center justify-between p-4 mb-3 rounded-xl border ${selectedReason === reason ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-transparent'
-                                        }`}
-                                >
-                                    <Text className={`font-semibold ${selectedReason === reason ? 'text-red-600' : 'text-gray-700'}`}>
-                                        {reason}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-
-                            <View className="flex-row space-x-4 mt-4">
-                                <TouchableOpacity
-                                    onPress={() => setCancelModalOpen(false)}
-                                    className="flex-1 py-4 bg-gray-100 rounded-xl items-center"
-                                >
-                                    <Text className="font-bold text-gray-700">Go Back</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={handleCancelConfirm}
-                                    disabled={!selectedReason}
-                                    className={`flex-1 py-4 rounded-xl items-center ${selectedReason ? 'bg-red-500 shadow-lg shadow-red-200' : 'bg-gray-300'
-                                        }`}
-                                >
-                                    <Text className="font-bold text-white">Confirm</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </View>
-                </Modal>
             </View>
         </View>
     );

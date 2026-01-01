@@ -13,6 +13,7 @@ configureReanimatedLogger({
 });
 
 // Import Screens
+import CancellationScreen from './src/screens/CancellationScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import FindingMechanicScreen from './src/screens/FindingMechanicScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
@@ -57,6 +58,7 @@ const Navigation = () => {
                         <Stack.Screen name="ServiceRequest" component={ServiceRequestScreen} />
                         <Stack.Screen name="FindingMechanic" component={FindingMechanicScreen} />
                         <Stack.Screen name="MechanicFound" component={MechanicFoundScreen} />
+                        <Stack.Screen name="Cancellation" component={CancellationScreen} />
                         <Stack.Screen name="Settings" component={SettingsScreen} />
                         <Stack.Screen name="NearbyMechanics" component={NearbyMechanicsScreen} />
                         <Stack.Screen name="Legal" component={LegalScreen} />
@@ -69,9 +71,16 @@ const Navigation = () => {
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { registerForPushNotificationsAsync } from './src/utils/notifications';
 
 export default function App() {
+    useEffect(() => {
+        // Request notification permissions on app load
+        registerForPushNotificationsAsync();
+    }, []);
+
     return (
         <SafeAreaProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>

@@ -6,8 +6,7 @@ import {
     Alert,
     Dimensions,
     FlatList,
-    Modal,
-    SafeAreaView,
+    Image,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -16,17 +15,16 @@ import {
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, {
-    SlideInDown,
-    SlideOutDown,
     useAnimatedStyle,
     useSharedValue,
     withRepeat,
     withSpring,
     withTiming
 } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../context/WebSocketContext';
-import api from '../utils/api';
+import { getMapAds } from '../utils/adsCache';
 import { navigate, resetRoot } from '../utils/navigationRef';
 
 const { width, height } = Dimensions.get('window');
@@ -88,14 +86,26 @@ const FindingMechanicScreen = () => {
             try {
                 const savedForm = await SecureStore.getItemAsync(FORM_STORAGE_KEY);
                 if (savedForm) {
-                    setJobDetails(JSON.parse(savedForm));
+                    const formData = JSON.parse(savedForm);
+                    // Initialize with requestId if available
+                    setJobDetails({
+                        ...formData,
+                        id: requestId || formData.id
+                    });
+                } else if (requestId) {
+                    // If no saved form, at least set the ID from params
+                    setJobDetails({
+                        vehicleType: paramVehicle,
+                        problem: paramProblem,
+                        id: requestId
+                    });
                 }
             } catch (e) {
                 console.error("Failed to load form data", e);
             }
         };
         loadJobDetails();
-    }, []);
+    }, [requestId]);
     // console.log(jobDetails)
     const { socket, lastMessage } = useWebSocket();
 
@@ -167,9 +177,6 @@ const FindingMechanicScreen = () => {
         }
     }, [lastMessage, isFocused]);
     const [searchTime, setSearchTime] = useState(0);
-    const [isCancelModalOpen, setCancelModalOpen] = useState(false);
-    const [selectedReason, setSelectedReason] = useState('');
-
     const translateY = useSharedValue(SNAP_POINTS.COLLAPSED);
     const context = useSharedValue({ y: 0 });
     const scanX = useSharedValue(-width);
@@ -233,46 +240,6 @@ const FindingMechanicScreen = () => {
             price: 'Save ₹1000'
         },
     ];
-    const handleCancelConfirm = async () => {
-        if (!selectedReason) {
-            Alert.alert("Selection Required", "Please select a reason");
-            return;
-        }
-
-        try {
-            setCancelModalOpen(false);
-
-            // 1. Send cancellation request to backend
-            await api.post(`jobs/CancelServiceRequest/${requestId}/`, {
-                cancellation_reason: selectedReason
-            });
-
-            // 2. Notify via WebSocket if successful
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({
-                    type: 'job_cancelled',
-                    job_id: requestId,
-                    message: `Cancelled by user: ${selectedReason}`
-                }));
-            }
-
-            console.log("Request Cancelled");
-            resetRoot('Main');
-
-        } catch (error) {
-            console.error("Cancellation failed", error);
-
-            // EXTRACT BACKEND ERROR MESSAGE
-            // Check if error.response exists and contains the specific 'error' key from your API
-            const errorMessage = error.response?.data?.error || "Failed to cancel. Try again.";
-
-            // DISPLAY THE ERROR TO THE USER
-            Alert.alert("Cancellation Error", errorMessage);
-
-            // Re-open modal so user can see what happened or try again
-            setCancelModalOpen(true);
-        }
-    };
 
     const renderAdItem = ({ item }) => (
         <TouchableOpacity
@@ -462,7 +429,7 @@ const FindingMechanicScreen = () => {
 
                             <View className="px-6 pb-10">
                                 <TouchableOpacity
-                                    onPress={() => setCancelModalOpen(true)}
+                                    onPress={() => navigation.navigate('Cancellation', { requestId })}
                                     className="w-full bg-red-600 py-4 rounded-2xl items-center flex-row justify-center shadow-md active:opacity-80"
                                 >
                                     <Ionicons name="close-circle" size={20} color="white" />
@@ -476,37 +443,7 @@ const FindingMechanicScreen = () => {
                     </Animated.View>
                 </GestureDetector>
 
-                {/* CANCELLATION MODAL */}
-                <Modal visible={isCancelModalOpen} transparent animationType="fade">
-                    <View className="flex-1 bg-black/60 justify-end">
-                        <Animated.View entering={SlideInDown} exiting={SlideOutDown} className="bg-white rounded-t-[32px] p-8 pb-12">
-                            <Text className="text-2xl font-black text-gray-900 mb-2">Cancel Service?</Text>
-                            <Text className="text-gray-500 mb-6">Please tell us why you want to cancel the request.</Text>
 
-                            {['Mechanic delayed', 'Found help elsewhere', 'Incorrect details', 'Other'].map((reason) => (
-                                <TouchableOpacity
-                                    key={reason}
-                                    onPress={() => setSelectedReason(reason)}
-                                    className={`flex-row items-center justify-between p-4 mb-3 rounded-2xl border ${selectedReason === reason ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100'}`}
-                                >
-                                    <Text className={`font-bold ${selectedReason === reason ? 'text-blue-600' : 'text-gray-700'}`}>{reason}</Text>
-                                    <View className={`w-5 h-5 rounded-full border-2 items-center justify-center ${selectedReason === reason ? 'border-blue-500' : 'border-gray-300'}`}>
-                                        {selectedReason === reason && <View className="w-2.5 h-2.5 bg-blue-500 rounded-full" />}
-                                    </View>
-                                </TouchableOpacity>
-                            ))}
-
-                            <View className="flex-row space-x-3 mt-6">
-                                <TouchableOpacity onPress={() => setCancelModalOpen(false)} className="flex-1 py-4 bg-gray-100 rounded-2xl items-center">
-                                    <Text className="font-bold text-gray-700">Go Back</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={handleCancelConfirm} disabled={!selectedReason} className={`flex-1 py-4 rounded-2xl items-center ${selectedReason ? 'bg-red-500' : 'bg-gray-200'}`}>
-                                    <Text className="font-bold text-white">Confirm</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </Animated.View>
-                    </View>
-                </Modal>
             </View>
         </GestureHandlerRootView>
     );

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mechanic Setu",
     "slug": "mechanic-setu",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "scheme": "mechanicsetu",
@@ -16,6 +16,11 @@
       "bundleIdentifier": "com.anonymous.mechanicsetu"
     },
     "android": {
+      "permissions": [
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "POST_NOTIFICATIONS"
+      ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyB41DRUbKW4nM5UPKsNHEMhhPcSilNv3I"
@@ -43,8 +48,22 @@
           "borderRadius": 10,
           "backgroundColor": "#ffffff"
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#10b981",
+          "mode": "production"
+        }
       ]
     ],
+    "notification": {
+      "icon": "./assets/logo.png",
+      "color": "#10b981",
+      "androidMode": "default",
+      "androidCollapsedTitle": "Mechanic Setu"
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
