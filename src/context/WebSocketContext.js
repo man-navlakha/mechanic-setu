@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import api, { BASE_URL } from '../utils/api';
 import { useAuth } from './AuthContext';
@@ -7,14 +7,108 @@ const WebSocketContext = createContext(null);
 
 export const useWebSocket = () => useContext(WebSocketContext);
 
+// Exponential backoff delays in milliseconds
+const BACKOFF_DELAYS = [1000, 2000, 5000, 10000, 30000]; // 1s, 2s, 5s, 10s, 30s
+const MAX_BACKOFF_INDEX = BACKOFF_DELAYS.length - 1;
+
 export const WebSocketProvider = ({ children }) => {
     const { isAuthenticated, user } = useAuth();
     const [socket, setSocket] = useState(null);
     const [lastMessage, setLastMessage] = useState(null);
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
+    const [queueSize, setQueueSize] = useState(0);
+    const [reconnectAttemptCount, setReconnectAttemptCount] = useState(0);
     const ws = useRef(null);
     const appState = useRef(AppState.currentState);
     const reconnectInterval = useRef(null);
+    const reconnectTimeout = useRef(null);
+    const reconnectAttempt = useRef(0);
+    const messageQueue = useRef([]);
+    const isReconnecting = useRef(false);
+    const isMounted = useRef(false);
+
+    // Track mounted state
+    useEffect(() => {
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
+    // Function to send a message (with automatic queuing if offline)
+    const sendMessage = useCallback((message) => {
+        const messageData = typeof message === 'string' ? message : JSON.stringify(message);
+
+        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+            // Connection is open, send immediately
+            try {
+                ws.current.send(messageData);
+                console.log('%c[WS-PROVIDER] Message sent:', 'color: #00CED1;', messageData);
+                return true;
+            } catch (error) {
+                console.error('[WS-PROVIDER] Error sending message:', error);
+                // Queue the message if send fails
+                messageQueue.current.push(messageData);
+                if (isMounted.current) {
+                    setQueueSize(messageQueue.current.length);
+                }
+                console.log('%c[WS-PROVIDER] Message queued (send failed):', 'color: #FFA500;', messageData);
+                return false;
+            }
+        } else {
+            // Connection not open, queue the message
+            messageQueue.current.push(messageData);
+            if (isMounted.current) {
+                setQueueSize(messageQueue.current.length);
+            }
+            console.log('%c[WS-PROVIDER] Message queued (offline):', 'color: #FFA500;', messageData);
+            console.log(`[WS-PROVIDER] Queue size: ${messageQueue.current.length}`);
+            return false;
+        }
+    }, []);
+
+    // Function to flush the message queue
+    const flushMessageQueue = useCallback(() => {
+        if (messageQueue.current.length > 0 && ws.current && ws.current.readyState === WebSocket.OPEN) {
+            console.log(`%c[WS-PROVIDER] Flushing ${messageQueue.current.length} queued messages...`, 'color: #32CD32; font-weight: bold;');
+
+            const queueCopy = [...messageQueue.current];
+            messageQueue.current = [];
+            if (isMounted.current) {
+                setQueueSize(0);
+            }
+
+            queueCopy.forEach((message, index) => {
+                try {
+                    ws.current.send(message);
+                    console.log(`%c[WS-PROVIDER] Sent queued message ${index + 1}/${queueCopy.length}:`, 'color: #32CD32;', message);
+                } catch (error) {
+                    console.error(`[WS-PROVIDER] Failed to send queued message ${index + 1}:`, error);
+                    // Re-queue failed messages
+                    messageQueue.current.push(message);
+                    if (isMounted.current) {
+                        setQueueSize(messageQueue.current.length);
+                    }
+                }
+            });
+        }
+    }, []);
+
+    // Exponential backoff reconnect
+    const scheduleReconnect = useCallback(() => {
+        if (!isAuthenticated || isReconnecting.current) return;
+
+        const delay = BACKOFF_DELAYS[Math.min(reconnectAttempt.current, MAX_BACKOFF_INDEX)];
+        console.log(`%c[WS-PROVIDER] Scheduling reconnect attempt ${reconnectAttempt.current + 1} in ${delay}ms...`, 'color: #FF6347;');
+
+        reconnectTimeout.current = setTimeout(() => {
+            reconnectAttempt.current += 1;
+            if (isMounted.current) {
+                setReconnectAttemptCount(reconnectAttempt.current);
+            }
+            connect();
+        }, delay);
+    }, [isAuthenticated]);
 
     const connect = useCallback(async () => {
         // Prevent connection if not authenticated
@@ -29,8 +123,10 @@ export const WebSocketProvider = ({ children }) => {
             return;
         }
 
+        // Set reconnecting flag
+        isReconnecting.current = true;
         setConnectionStatus('connecting');
-        console.log(`%c[WS-PROVIDER] Starting connection for User: ${user?.email || 'Unknown'}`, 'color: #8A2BE2;');
+        console.log(`%c[WS-PROVIDER] Starting connection for User: ${user?.email || 'Unknown'} (Attempt: ${reconnectAttempt.current + 1})`, 'color: #8A2BE2;');
 
         try {
             // 1. Get One-Time Token for WS Auth
@@ -40,13 +136,8 @@ export const WebSocketProvider = ({ children }) => {
             if (!wsToken) throw new Error("Failed to get WebSocket token");
 
             // 2. Determine WebSocket URL
-            // Extract host from BASE_URL (remove protocol and /api path)
-            // BASE_URL is 'https://mechanic-setu.onrender.com/api'
             let wsHost = BASE_URL.replace(/^https?:\/\//, '').replace(/\/api\/?$/, '');
             const wsScheme = BASE_URL.startsWith('https') ? 'wss' : 'ws';
-
-            // Construct URL: ws://HOST/ws/job_notifications/?token=ABC
-            // Result should be: wss://mechanic-setu.onrender.com/ws/job_notifications/...
             const wsUrl = `${wsScheme}://${wsHost}/ws/job_notifications/?token=${wsToken}`;
 
             console.log(`[WS-PROVIDER] Connecting to: ${wsUrl}`);
@@ -60,15 +151,27 @@ export const WebSocketProvider = ({ children }) => {
 
             ws.current.onopen = () => {
                 console.log('%c[WS-PROVIDER] ==> Connection successful!', 'color: #008000; font-weight: bold;');
+                if (!isMounted.current) return;
+
                 setConnectionStatus('connected');
                 setSocket(ws.current);
+                isReconnecting.current = false;
+
+                // Reset reconnect attempt counter on successful connection
+                reconnectAttempt.current = 0;
+                setReconnectAttemptCount(0);
+
+                // Flush any queued messages
+                flushMessageQueue();
             };
 
             ws.current.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
                     console.log('%c[WS-PROVIDER] ==> Message Received:', 'color: #eab308; font-weight: bold;', data);
-                    setLastMessage(data);
+                    if (isMounted.current) {
+                        setLastMessage(data);
+                    }
                 } catch (e) {
                     console.warn('[WS-PROVIDER] Received non-JSON message:', event.data);
                 }
@@ -76,36 +179,73 @@ export const WebSocketProvider = ({ children }) => {
 
             ws.current.onclose = (event) => {
                 console.warn(`[WS-PROVIDER] ==> Disconnected. Code: ${event.code}, Reason: ${event.reason}`);
-                setConnectionStatus('disconnected');
-                setSocket(null);
+                if (isMounted.current) {
+                    setConnectionStatus('disconnected');
+                    setSocket(null);
+                }
+                isReconnecting.current = false;
+
+                // Only auto-reconnect if not a normal closure and user is authenticated
+                if (event.code !== 1000 && isAuthenticated) {
+                    scheduleReconnect();
+                }
             };
 
             ws.current.onerror = (error) => {
                 console.error('[WS-PROVIDER] ==> An error occurred:', error.message);
-                setConnectionStatus('error');
+                if (isMounted.current) {
+                    setConnectionStatus('error');
+                }
             };
 
         } catch (error) {
             console.error('[WS-PROVIDER] ==> Connection setup failed:', error);
             setConnectionStatus('error');
+            isReconnecting.current = false;
+
+            // Schedule reconnect on error
+            if (isAuthenticated) {
+                scheduleReconnect();
+            }
         }
-    }, [isAuthenticated, user]);
+    }, [isAuthenticated, user, flushMessageQueue, scheduleReconnect]);
 
     // 1. Monitor Auth State & Connect/Disconnect
     useEffect(() => {
         if (isAuthenticated) {
             connect();
         } else {
+            // Clear any pending reconnect attempts
+            if (reconnectTimeout.current) {
+                clearTimeout(reconnectTimeout.current);
+                reconnectTimeout.current = null;
+            }
+            reconnectAttempt.current = 0;
+            if (isMounted.current) {
+                setReconnectAttemptCount(0);
+            }
+
             if (ws.current) {
                 console.log('[WS-PROVIDER] User logged out. Closing WebSocket.');
                 ws.current.close(1000, "User logged out");
                 ws.current = null;
-                setConnectionStatus('disconnected');
+                if (isMounted.current) {
+                    setConnectionStatus('disconnected');
+                }
+            }
+
+            // Clear message queue on logout
+            if (messageQueue.current.length > 0) {
+                console.log(`[WS-PROVIDER] Clearing ${messageQueue.current.length} queued messages due to logout.`);
+                messageQueue.current = [];
+                if (isMounted.current) {
+                    setQueueSize(0);
+                }
             }
         }
     }, [isAuthenticated, connect]);
 
-    // 2. Periodic Re-connection (3-5 mins)
+    // 2. Periodic Re-connection (3-5 mins) to refresh token
     useEffect(() => {
         if (isAuthenticated && connectionStatus === 'connected') {
             // Clear existing interval if any
@@ -117,11 +257,12 @@ export const WebSocketProvider = ({ children }) => {
                 if (ws.current) {
                     ws.current.close(1000, "Auto-refresh");
                 }
-                // connect() will be called automatically? No, close updates state, but we might need to trigger connect manually or rely on some logic. 
-                // Actually, easier to just call connect() after a short delay or let it handle itself.
-                // Better approach: Close it. The 'onclose' handler sets status to disconnected. 
-                // Then cleanly call connect() again.
-                connect();
+                // Reset attempt counter for planned reconnect
+                reconnectAttempt.current = 0;
+                if (isMounted.current) {
+                    setReconnectAttemptCount(0);
+                }
+                setTimeout(() => connect(), 500);
             }, 240000);
 
             return () => clearInterval(reconnectInterval.current);
@@ -134,6 +275,11 @@ export const WebSocketProvider = ({ children }) => {
             if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
                 console.log('[WS-PROVIDER] App came to foreground. Reconnecting if needed...');
                 if (isAuthenticated && (!ws.current || ws.current.readyState === WebSocket.CLOSED)) {
+                    // Reset attempt counter when app comes to foreground
+                    reconnectAttempt.current = 0;
+                    if (isMounted.current) {
+                        setReconnectAttemptCount(0);
+                    }
                     connect();
                 }
             }
@@ -149,9 +295,8 @@ export const WebSocketProvider = ({ children }) => {
     useEffect(() => {
         return () => {
             if (reconnectInterval.current) clearInterval(reconnectInterval.current);
-            // We consciously decide NOT to close the socket here on unmount of the Provider during dev 
-            // hot-reloads to avoid "1000" disconnect spam, but locally it cleans up fine.
-            // On production app kill, the OS handles it.
+            if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+
             if (ws.current) {
                 console.log('[WS-PROVIDER] Provider unmounting. Closing WebSocket.');
                 ws.current.close(1000, "Provider unmounted");
@@ -160,7 +305,14 @@ export const WebSocketProvider = ({ children }) => {
         };
     }, []);
 
-    const value = { socket, lastMessage, connectionStatus };
+    const value = useMemo(() => ({
+        socket,
+        lastMessage,
+        connectionStatus,
+        sendMessage,
+        queueSize,
+        reconnectAttempt: reconnectAttemptCount
+    }), [socket, lastMessage, connectionStatus, sendMessage, queueSize, reconnectAttemptCount]);
 
     return (
         <WebSocketContext.Provider value={value}>

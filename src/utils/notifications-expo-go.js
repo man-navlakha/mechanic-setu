@@ -5,7 +5,9 @@ import { Alert } from 'react-native';
 // Simple notification configuration that works in Expo Go
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
-        shouldShowAlert: true,
+        shouldShowAlert: true, // Deprecated but kept for backwards compatibility
+        shouldShowBanner: true,
+        shouldShowList: true,
         shouldPlaySound: true,
         shouldSetBadge: false, // Simplified for Expo Go
     }),

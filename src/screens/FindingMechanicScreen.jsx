@@ -12,16 +12,16 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
     withRepeat,
-    withSpring,
     withTiming
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ImageAdCard } from '../components/ImageAdCard';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../context/WebSocketContext';
 import { getMapAds } from '../utils/adsCache';
@@ -30,8 +30,8 @@ import { navigate, resetRoot } from '../utils/navigationRef';
 const { width, height } = Dimensions.get('window');
 
 const SNAP_POINTS = {
-    COLLAPSED: height - 420, // Adjusted for carousel
-    EXPANDED: height * 0.4,
+    COLLAPSED: height * 0.65,
+    EXPANDED: height * 0.35,
 };
 
 const mapStyle = [
@@ -176,24 +176,33 @@ const FindingMechanicScreen = () => {
             );
         }
     }, [lastMessage, isFocused]);
-    const [searchTime, setSearchTime] = useState(0);
+
+    // ⚡ Performance: Use shared value for timer instead of state to avoid re-renders
+    const searchTimeSeconds = useSharedValue(0);
+    const [displayTime, setDisplayTime] = useState('0:00');
+
+    useEffect(() => {
+        // Update display time with minimal re-renders (only once per second)
+        const interval = setInterval(() => {
+            searchTimeSeconds.value += 1;
+            const mins = Math.floor(searchTimeSeconds.value / 60);
+            const secs = searchTimeSeconds.value % 60;
+            setDisplayTime(`${mins}:${secs.toString().padStart(2, '0')}`);
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, []);
+
     const translateY = useSharedValue(SNAP_POINTS.COLLAPSED);
     const context = useSharedValue({ y: 0 });
     const scanX = useSharedValue(-width);
 
     useEffect(() => {
         scanX.value = withRepeat(withTiming(width, { duration: 2000 }), -1, false);
-        const interval = setInterval(() => setSearchTime(t => t + 1), 1000);
-        return () => clearInterval(interval);
     }, []);
 
-    const formatTime = (seconds) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
-    const RECOMMENDED_ADS = [
+    // ⚡ Memoized ads data to prevent recreation on every render
+    const RECOMMENDED_ADS = useMemo(() => [
         {
             id: '1',
             type: 'image',
@@ -254,7 +263,7 @@ const FindingMechanicScreen = () => {
             ctaText: 'Book Now',
             badge: 'FREE'
         },
-    ];
+    ], []);
 
     const renderAdItem = ({ item }) => (
         <TouchableOpacity
@@ -297,21 +306,30 @@ const FindingMechanicScreen = () => {
 
 
     const gesture = Gesture.Pan()
-        .onStart(() => { context.value = { y: translateY.value }; })
+        .onStart(() => {
+            context.value = { y: translateY.value };
+        })
         .onUpdate((event) => {
-            translateY.value = Math.max(SNAP_POINTS.EXPANDED, event.translationY + context.value.y);
+            translateY.value = event.translationY + context.value.y;
+            // Limit range: EXPANDED (top) to COLLAPSED (bottom)
+            translateY.value = Math.max(SNAP_POINTS.EXPANDED, Math.min(translateY.value, SNAP_POINTS.COLLAPSED + 50));
         })
         .onEnd(() => {
             if (translateY.value < (SNAP_POINTS.COLLAPSED + SNAP_POINTS.EXPANDED) / 2) {
-                translateY.value = withSpring(SNAP_POINTS.EXPANDED);
+                translateY.value = withTiming(SNAP_POINTS.EXPANDED, { duration: 300 });
             } else {
-                translateY.value = withSpring(SNAP_POINTS.COLLAPSED);
+                translateY.value = withTiming(SNAP_POINTS.COLLAPSED, { duration: 300 });
             }
         });
 
-    const rBottomSheetStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }],
-    }));
+    const rBottomSheetStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ translateY: translateY.value }],
+            height: height,
+            top: 0,
+            marginBottom: 16
+        };
+    });
 
     const rScanStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: scanX.value }],
@@ -320,8 +338,9 @@ const FindingMechanicScreen = () => {
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <View className="flex-1 bg-white">
+                {/* ⚡ Optimized MapView with performance props */}
                 <MapView
-                    ref={mapRef} // Attach ref here
+                    ref={mapRef}
                     provider={PROVIDER_GOOGLE}
                     style={{ flex: 1 }}
                     customMapStyle={mapStyle}
@@ -330,37 +349,41 @@ const FindingMechanicScreen = () => {
                         latitudeDelta: 0.005,
                         longitudeDelta: 0.005,
                     }}
+                    moveOnMarkerPress={false}
+                    toolbarEnabled={false}
+                    loadingEnabled={false}
                 >
-                    {/* SONAR EFFECT MARKER */}
+                    {/* User Location Marker */}
                     <Marker
                         coordinate={staticLocation}
                         flat
                         anchor={{ x: 0.5, y: 0.5 }}
+                        tracksViewChanges={false}
                         onPress={() => {
                             if (mapRef.current) {
                                 mapRef.current.animateToRegion({
                                     ...staticLocation,
-                                    latitudeDelta: 0.005, // You can adjust zoom level here
+                                    latitudeDelta: 0.005,
                                     longitudeDelta: 0.005,
-                                }, 2000); // Duration in milliseconds
+                                }, 2000);
                             }
                         }}
                     >
                         <View className="items-center justify-center">
-
-                            {/* Static Black/Blue Icon */}
-
                             <View className="w-10 h-10 bg-black rounded-full border-[3px] border-white shadow-2xl items-center justify-center">
                                 <Ionicons name="location" size={18} color="white" />
                             </View>
                             <Text>{userData.first_name} 🙋‍♂️</Text>
                         </View>
                     </Marker>
-                    {adsData.map((ad) => (
+
+                    {/* ⚡ Memoized Ad Markers - only re-render when adsData changes */}
+                    {useMemo(() => adsData.map((ad) => (
                         <Marker
                             key={`ad-${ad.id}`}
                             coordinate={{ latitude: ad.latitude, longitude: ad.longitude }}
                             onPress={() => setSelectedAd(ad)}
+                            tracksViewChanges={false}
                         >
                             <View className="bg-white p-0.5 rounded-full border-2 border-amber-400 shadow-lg overflow-hidden" style={{ width: 36, height: 36 }}>
                                 <Image
@@ -370,7 +393,7 @@ const FindingMechanicScreen = () => {
                                 />
                             </View>
                         </Marker>
-                    ))}
+                    )), [adsData])}
                 </MapView>
 
                 {/* Floating Navigation */}
@@ -385,65 +408,66 @@ const FindingMechanicScreen = () => {
 
                 {/* BOTTOM SHEET */}
                 <GestureDetector gesture={gesture}>
-                    <Animated.View style={[styles.bottomSheet, rBottomSheetStyle]}>
+                    <Animated.View style={[{ position: 'absolute', left: 0, right: 0, backgroundColor: 'white', borderTopLeftRadius: 30, borderTopRightRadius: 30, elevation: 10, paddingTop: 10, marginBottom: 3 }, rBottomSheetStyle]}>
+                        {/* Drag Handle */}
+                        <View className="w-12 h-1.5 bg-gray-300 rounded-full self-center mb-2" />
+
                         {/* Scanning Progress Bar */}
                         <View className="h-2 w-full bg-blue-100 rounded-full overflow-hidden">
                             <Animated.View style={[styles.scanLine, rScanStyle]} />
                         </View>
+                        <ScrollView>
 
 
-                        <View className="pt-6 ">
-                            <View className="px-6 flex gap-4 mb-6">
-                                <View>
-                                    <Text className="text-2xl font-extrabold text-gray-900 tracking-tight">
-                                        {jobDetails?.id ? "Job is Live!" : "Broadcasting..."}
-                                    </Text>
-                                    <Text className="text-gray-500 text-sm mt-1">
-                                        {jobDetails?.id
-                                            ? `Your request (ID: ${jobDetails.id}) is now visible to nearby mechanics.`
-                                            : "Sending your request to the server..."}
-                                    </Text>
+                            <View className="pt-6 px-6 pb-10 mb-52">
+                                <View className="flex gap-4 mb-6">
+                                    <View>
+                                        <Text className="text-2xl font-extrabold text-gray-900 tracking-tight">
+                                            {jobDetails?.id ? "Job is Live!" : "Broadcasting..."}
+                                        </Text>
+                                        <Text className="text-gray-500 text-sm mt-1">
+                                            {jobDetails?.id
+                                                ? `Your request (ID: ${jobDetails.id}) is now visible to nearby mechanics.`
+                                                : "Sending your request to the server..."}
+                                        </Text>
 
-                                    {/* Display the server-confirmed location */}
-                                    {jobDetails?.location && (
-                                        <View className="flex-row items-center bg-gray-50 p-3 rounded-xl mt-4">
-                                            <Ionicons name="location" size={16} color="#3b82f6" />
-                                            <Text className="ml-2 text-gray-600 text-xs flex-1" numberOfLines={1}>
-                                                {jobDetails.location}
-                                            </Text>
-                                        </View>
-                                    )}
+                                        {/* Display the server-confirmed location */}
+                                        {jobDetails?.location && (
+                                            <View className="flex-row items-center bg-gray-50 p-3 rounded-xl mt-4">
+                                                <Ionicons name="location" size={16} color="#3b82f6" />
+                                                <Text className="ml-2 text-gray-600 text-xs flex-1" numberOfLines={1}>
+                                                    {jobDetails.location}
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    <View className="flex-row items-center bg-blue-50 self-start px-3 py-1.5 rounded-full border border-blue-100">
+                                        <Ionicons name="time" size={14} color="#2563eb" />
+                                        <Text className="ml-2 text-blue-600 font-semibold text-xs">
+                                            Elapsed: {displayTime}
+                                        </Text>
+                                    </View>
+
                                 </View>
 
-                                <View className="flex-row items-center bg-blue-50 self-start px-3 py-1.5 rounded-full border border-blue-100">
-                                    <Ionicons name="time" size={14} color="#2563eb" />
-                                    <Text className="ml-2 text-blue-600 font-semibold text-xs">
-                                        Elapsed: {formatTime(searchTime)}
-                                    </Text>
-                                </View>
-
-                            </View>
 
 
-
-                            {/* ADS CAROUSEL (Uber-style) */}
-                            <View className="mb-8">
-                                <Text className="px-6 text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Recommended for you</Text>
-                                <View className="px-6">
+                                {/* ADS CAROUSEL (Uber-style) */}
+                                <View className="mb-8">
+                                    <Text className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Recommended for you</Text>
                                     <FlatList
                                         data={RECOMMENDED_ADS}
                                         renderItem={({ item }) => <ImageAdCard item={item} />}
                                         scrollEnabled={false}
                                         keyExtractor={(item) => item.id}
                                     />
+
                                 </View>
 
-                            </View>
-
-                            <View className="px-6 pb-10">
                                 <TouchableOpacity
                                     onPress={() => navigation.navigate('Cancellation', { requestId })}
-                                    className="w-full bg-red-600 py-4 rounded-2xl items-center flex-row justify-center shadow-md active:opacity-80"
+                                    className="w-full bg-red-600 py-4 rounded-2xl items-center flex-row justify-center shadow-md active:opacity-80 mb-36"
                                 >
                                     <Ionicons name="close-circle" size={20} color="white" />
                                     <Text className="ml-2 text-white font-black text-base uppercase tracking-widest">
@@ -452,7 +476,7 @@ const FindingMechanicScreen = () => {
                                 </TouchableOpacity>
 
                             </View>
-                        </View>
+                        </ScrollView>
                     </Animated.View>
                 </GestureDetector>
 
