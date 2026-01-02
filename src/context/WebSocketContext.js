@@ -163,7 +163,7 @@ export const WebSocketProvider = ({ children }) => {
 
                 // TEST: Send a ping to verify bidirectional communication
                 try {
-                    const pingMessage = JSON.stringify({ type: 'ping', timestamp: Date.now() });
+                    const pingMessage = JSON.stringify({ type: 'user_heartbeat', timestamp: Date.now() });
                     ws.current.send(pingMessage);
                     console.log('%c[WS-PROVIDER] 📤 Sent test ping:', 'color: #3b82f6;', pingMessage);
                 } catch (err) {

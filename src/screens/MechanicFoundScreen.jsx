@@ -821,7 +821,7 @@ const MechanicFoundScreen = ({ route }) => {
                                 <View className="bg-gray-50 p-4 rounded-2xl mb-6">
                                     <Text className="text-xs font-bold text-gray-400 uppercase mb-2">Issue Reported</Text>
                                     <Text className="text-gray-900 font-bold text-lg">{jobDetails?.problem || 'General Breakdown'}</Text>
-                                    {jobDetails?.vehicleType && <Text className="text-blue-600 font-medium mt-1 capitalize">{jobDetails.vehicleType}</Text>}
+                                    {jobDetails?.vehicleType || jobDetails?.vehical_type && <Text className="text-blue-600 font-medium mt-1 capitalize">{jobDetails.vehicleType}</Text>}
                                 </View>
 
                                 {/* Having an Issue Banner */}
