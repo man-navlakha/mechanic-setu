@@ -76,7 +76,7 @@ const MechanicFoundScreen = ({ route }) => {
         problem: fallbackProblem
     } = route.params || {};
 
-    const { socket, lastMessage } = useWebSocket();
+    const { socket, lastMessage, connectionStatus } = useWebSocket();
     console.log(routeData)
     console.log(paramLocation)
 
@@ -87,6 +87,18 @@ const MechanicFoundScreen = ({ route }) => {
     const [mechanicLocation, setMechanicLocation] = useState(null);
     const [estimatedTime, setEstimatedTime] = useState(null);
     const [requestId, setRequestId] = useState(null);
+
+    // DEBUG: Monitor WebSocket state changes
+    useEffect(() => {
+        console.log('%c[MechanicFound] 🌐 WebSocket State:', 'color: #06b6d4; font-weight: bold;', {
+            hasSocket: !!socket,
+            connectionStatus,
+            hasLastMessage: !!lastMessage,
+            lastMessageType: lastMessage?.type,
+            requestId,
+            isFocused
+        });
+    }, [socket, connectionStatus, lastMessage, requestId, isFocused]);
 
     // Ads State
     const [adsData, setAdsData] = useState([]);
@@ -111,6 +123,11 @@ const MechanicFoundScreen = ({ route }) => {
     const [isJobCancelledState, setIsJobCancelledState] = useState(false);
     const [isMechanicArrived, setIsMechanicArrived] = useState(false);
     const [showSafetyToolkit, setShowSafetyToolkit] = useState(false);
+
+    // Mechanic Connectivity Tracking
+    const [isMechanicConnected, setIsMechanicConnected] = useState(true);
+    const [lastLocationUpdate, setLastLocationUpdate] = useState(Date.now());
+    const connectivityCheckInterval = useRef(null);
 
     const mapRef = useRef(null);
 
@@ -159,8 +176,26 @@ const MechanicFoundScreen = ({ route }) => {
                 const mech = routeData.mechanic_details;
                 const reqId = routeData.job_id || routeData.request_id;
 
+                console.log('%c[MechanicFound] 🚀 Initial Load:', 'color: #8b5cf6; font-weight: bold;', {
+                    requestId: reqId,
+                    requestIdType: typeof reqId,
+                    mechanicName: `${mech.first_name} ${mech.last_name}`,
+                    mechanicId: mech.id,
+                    routeData: routeData
+                });
+
                 setMechanic(mech);
                 setRequestId(reqId);
+
+                // TRY: Subscribe to job updates via WebSocket
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    const subscribeMessage = {
+                        type: 'subscribe_job',
+                        job_id: reqId
+                    };
+                    socket.send(JSON.stringify(subscribeMessage));
+                    console.log('%c[MechanicFound] 📡 Subscribing to job updates:', 'color: #a855f7;', subscribeMessage);
+                }
 
                 if (mech.current_latitude) {
                     setMechanicLocation({
@@ -210,15 +245,57 @@ const MechanicFoundScreen = ({ route }) => {
     }, [routeData]);
     // WebSocket Updates (kept same)
     useEffect(() => {
+        // DEBUG: Show guard conditions
+        console.log('%c[MechanicFound] 🔒 Guard Check:', 'color: #f59e0b;', {
+            hasLastMessage: !!lastMessage,
+            hasRequestId: !!requestId,
+            isFocused,
+            willProcess: !(!lastMessage || !requestId || !isFocused)
+        });
+
         if (!lastMessage || !requestId || !isFocused) return;
 
-        // Mechanic Location Update
-        if (lastMessage.type === 'mechanic_location_update' && String(lastMessage.request_id) === String(requestId)) {
+        // DEBUG: Log ALL incoming messages
+        console.log('%c[MechanicFound] 🔔 WebSocket Message Received:', 'color: #eab308; font-weight: bold;', {
+            type: lastMessage.type,
+            request_id: lastMessage.request_id,
+            job_id: lastMessage.job_id,
+            currentRequestId: requestId,
+            fullMessage: lastMessage
+        });
+
+        // Mechanic Location Update - FIX: Check for BOTH job_id and request_id
+        const messageJobId = lastMessage.job_id || lastMessage.request_id;
+        if (lastMessage.type === 'mechanic_location_update' && String(messageJobId) === String(requestId)) {
+            console.log('%c[MechanicFound] 📍 Mechanic Location Update:', 'color: #10b981; font-weight: bold;', {
+                latitude: lastMessage.latitude,
+                longitude: lastMessage.longitude,
+                job_id: lastMessage.job_id,
+                request_id: lastMessage.request_id,
+                matchedWith: requestId,
+                timestamp: new Date().toLocaleTimeString(),
+                fullMessage: lastMessage
+            });
+
             setMechanicLocation({
                 latitude: lastMessage.latitude,
                 longitude: lastMessage.longitude
             });
+            // Update last location timestamp for connectivity tracking
+            setLastLocationUpdate(Date.now());
+            setIsMechanicConnected(true);
+        } else if (lastMessage.type === 'mechanic_location_update') {
+            // DEBUG: Location update received but ID doesn't match
+            console.warn('%c[MechanicFound] ⚠️ Location update ignored - ID mismatch:', 'color: #ef4444;', {
+                messageJobId: lastMessage.job_id,
+                messageRequestId: lastMessage.request_id,
+                currentRequestId: requestId,
+                messageJobIdType: typeof lastMessage.job_id,
+                messageRequestIdType: typeof lastMessage.request_id,
+                currentRequestIdType: typeof requestId
+            });
         }
+
         const msgReqId = String(lastMessage.request_id || lastMessage.job_id);
         const currentReqId = String(requestId);
 
@@ -294,6 +371,37 @@ const MechanicFoundScreen = ({ route }) => {
         }
     }, [userLocation, mechanicLocation]);
 
+    // Monitor mechanic connectivity based on location updates
+    useEffect(() => {
+        // Start monitoring only when we have a mechanic
+        if (!mechanic || !requestId) return;
+
+        // Check connectivity every 5 seconds
+        const CONNECTIVITY_CHECK_INTERVAL = 5000; // 5 seconds
+        const DISCONNECT_THRESHOLD = 30000; // 30 seconds without update = disconnected
+
+        connectivityCheckInterval.current = setInterval(() => {
+            const timeSinceLastUpdate = Date.now() - lastLocationUpdate;
+
+            if (timeSinceLastUpdate > DISCONNECT_THRESHOLD) {
+                if (isMechanicConnected) {
+                    console.warn(`[MechanicFound] Mechanic appears disconnected. No location update for ${Math.floor(timeSinceLastUpdate / 1000)}s`);
+                    setIsMechanicConnected(false);
+                }
+            } else {
+                if (!isMechanicConnected) {
+                    console.log('[MechanicFound] Mechanic reconnected!');
+                    setIsMechanicConnected(true);
+                }
+            }
+        }, CONNECTIVITY_CHECK_INTERVAL);
+
+        return () => {
+            if (connectivityCheckInterval.current) {
+                clearInterval(connectivityCheckInterval.current);
+            }
+        };
+    }, [mechanic, requestId, lastLocationUpdate, isMechanicConnected]);
 
     const clearAndExit = async (msg = null) => {
         try {
@@ -593,12 +701,23 @@ const MechanicFoundScreen = ({ route }) => {
                         <Marker coordinate={mechanicLocation}>
                             <View className="items-center justify-center">
                                 {mechanic.Mechanic_profile_pic ? (
-                                    <Image source={{ uri: mechanic.Mechanic_profile_pic }} style={{ width: 35, height: 35, borderRadius: 17.5, borderWidth: 3, borderColor: '#3b82f6' }} />
+                                    <Image
+                                        source={{ uri: mechanic.Mechanic_profile_pic }}
+                                        style={{
+                                            width: 35,
+                                            height: 35,
+                                            borderRadius: 17.5,
+                                            borderWidth: 3,
+                                            borderColor: isMechanicConnected ? '#3b82f6' : '#ef4444'
+                                        }}
+                                    />
                                 ) : (
-                                    <View className="w-9 h-9 bg-blue-500 rounded-full border-2 border-white items-center justify-center">
+                                    <View className={`w-9 h-9 rounded-full border-2 border-white items-center justify-center ${isMechanicConnected ? 'bg-blue-500' : 'bg-red-500'}`}>
                                         <Ionicons name="construct" color="white" size={20} />
                                     </View>
                                 )}
+                                {/* Connectivity Indicator Dot */}
+                                <View className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${isMechanicConnected ? 'bg-green-500' : 'bg-red-500'}`} />
                             </View>
 
                         </Marker>
@@ -622,9 +741,25 @@ const MechanicFoundScreen = ({ route }) => {
                 </MapView>
 
 
+                {/* Mechanic Disconnection Warning Banner */}
+                {!isMechanicConnected && (
+                    <Animated.View
+                        entering={FadeIn}
+                        className="absolute top-0 left-0 right-0 z-20 bg-red-500 py-2 px-4"
+                    >
+                        <SafeAreaView edges={['top']}>
+                            <View className="flex-row items-center justify-center">
+                                <Ionicons name="warning" size={16} color="white" />
+                                <Text className="text-white font-bold text-xs ml-2">
+                                    Mechanic connection lost. Trying to reconnect...
+                                </Text>
+                            </View>
+                        </SafeAreaView>
+                    </Animated.View>
+                )}
 
                 {/* Top Green Header */}
-                <View className={`absolute -top-8 left-0 right-0 z-10 ${isMechanicArrived ? 'bg-blue-600' : 'bg-green-600'} shadow-md pb-4 pt-2`}>
+                <View className={`absolute ${!isMechanicConnected ? 'top-10' : '-top-8'} left-0 right-0 z-10 ${isMechanicArrived ? 'bg-blue-600' : 'bg-green-600'} shadow-md pb-4 pt-2`}>
                     <View className="px-4 flex-row mt-14 items-center pb-3 pt-4 mb-2">
                         <TouchableOpacity
                             onPress={() => navigation.goBack()}

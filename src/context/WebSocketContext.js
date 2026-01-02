@@ -161,6 +161,15 @@ export const WebSocketProvider = ({ children }) => {
                 reconnectAttempt.current = 0;
                 setReconnectAttemptCount(0);
 
+                // TEST: Send a ping to verify bidirectional communication
+                try {
+                    const pingMessage = JSON.stringify({ type: 'ping', timestamp: Date.now() });
+                    ws.current.send(pingMessage);
+                    console.log('%c[WS-PROVIDER] 📤 Sent test ping:', 'color: #3b82f6;', pingMessage);
+                } catch (err) {
+                    console.error('[WS-PROVIDER] Failed to send ping:', err);
+                }
+
                 // Flush any queued messages
                 flushMessageQueue();
             };
@@ -168,7 +177,18 @@ export const WebSocketProvider = ({ children }) => {
             ws.current.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    console.log('%c[WS-PROVIDER] ==> Message Received:', 'color: #eab308; font-weight: bold;', data);
+
+                    // ENHANCED LOGGING: Show all message details
+                    console.log('%c╔════════════════════════════════════════════════════════════╗', 'color: #22c55e; font-weight: bold;');
+                    console.log('%c║  [WS-PROVIDER] 📨 MESSAGE RECEIVED', 'color: #22c55e; font-weight: bold;');
+                    console.log('%c╠════════════════════════════════════════════════════════════╣', 'color: #22c55e;');
+                    console.log('%c║  Type:', 'color: #22c55e;', data.type);
+                    console.log('%c║  Request ID:', 'color: #22c55e;', data.request_id);
+                    console.log('%c║  Job ID:', 'color: #22c55e;', data.job_id);
+                    console.log('%c║  Timestamp:', 'color: #22c55e;', new Date().toLocaleTimeString());
+                    console.log('%c║  Full Data:', 'color: #22c55e;', data);
+                    console.log('%c╚════════════════════════════════════════════════════════════╝', 'color: #22c55e; font-weight: bold;');
+
                     if (isMounted.current) {
                         setLastMessage(data);
                     }
