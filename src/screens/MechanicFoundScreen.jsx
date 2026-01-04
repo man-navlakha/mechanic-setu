@@ -187,16 +187,6 @@ const MechanicFoundScreen = ({ route }) => {
                 setMechanic(mech);
                 setRequestId(reqId);
 
-                // TRY: Subscribe to job updates via WebSocket
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                    const subscribeMessage = {
-                        type: 'subscribe_job',
-                        job_id: reqId
-                    };
-                    socket.send(JSON.stringify(subscribeMessage));
-                    console.log('%c[MechanicFound] 📡 Subscribing to job updates:', 'color: #a855f7;', subscribeMessage);
-                }
-
                 if (mech.current_latitude) {
                     setMechanicLocation({
                         latitude: parseFloat(mech.current_latitude),
@@ -243,6 +233,7 @@ const MechanicFoundScreen = ({ route }) => {
 
         loadInitialData();
     }, [routeData]);
+
     // WebSocket Updates (kept same)
     useEffect(() => {
         // DEBUG: Show guard conditions
@@ -264,19 +255,16 @@ const MechanicFoundScreen = ({ route }) => {
             fullMessage: lastMessage
         });
 
-        // Mechanic Location Update - FIX: Check for BOTH job_id and request_id
-        const messageJobId = lastMessage.job_id || lastMessage.request_id;
-        if (lastMessage.type === 'mechanic_location_update' && String(messageJobId) === String(requestId)) {
-            console.log('%c[MechanicFound] 📍 Mechanic Location Update:', 'color: #10b981; font-weight: bold;', {
+        // Mechanic Location Update - FIX: Backend doc says they don't send IDs back, only location + mechanic_id
+        if (lastMessage.type === 'mechanic_location_update') {
+            console.log('%c[MechanicFound] 📍 Received Location Push from Server:', 'color: #10b981; font-weight: bold;', {
                 latitude: lastMessage.latitude,
                 longitude: lastMessage.longitude,
-                job_id: lastMessage.job_id,
-                request_id: lastMessage.request_id,
-                matchedWith: requestId,
-                timestamp: new Date().toLocaleTimeString(),
-                fullMessage: lastMessage
+                mechanic_id: lastMessage.mechanic_id,
+                timestamp: new Date().toLocaleTimeString()
             });
 
+            // Since server routes this to OUR personal room, we accept it as our mechanic
             setMechanicLocation({
                 latitude: lastMessage.latitude,
                 longitude: lastMessage.longitude
@@ -284,16 +272,6 @@ const MechanicFoundScreen = ({ route }) => {
             // Update last location timestamp for connectivity tracking
             setLastLocationUpdate(Date.now());
             setIsMechanicConnected(true);
-        } else if (lastMessage.type === 'mechanic_location_update') {
-            // DEBUG: Location update received but ID doesn't match
-            console.warn('%c[MechanicFound] ⚠️ Location update ignored - ID mismatch:', 'color: #ef4444;', {
-                messageJobId: lastMessage.job_id,
-                messageRequestId: lastMessage.request_id,
-                currentRequestId: requestId,
-                messageJobIdType: typeof lastMessage.job_id,
-                messageRequestIdType: typeof lastMessage.request_id,
-                currentRequestIdType: typeof requestId
-            });
         }
 
         const msgReqId = String(lastMessage.request_id || lastMessage.job_id);
@@ -821,7 +799,11 @@ const MechanicFoundScreen = ({ route }) => {
                                 <View className="bg-gray-50 p-4 rounded-2xl mb-6">
                                     <Text className="text-xs font-bold text-gray-400 uppercase mb-2">Issue Reported</Text>
                                     <Text className="text-gray-900 font-bold text-lg">{jobDetails?.problem || 'General Breakdown'}</Text>
-                                    {jobDetails?.vehicleType || jobDetails?.vehical_type && <Text className="text-blue-600 font-medium mt-1 capitalize">{jobDetails.vehicleType}</Text>}
+                                    {(jobDetails?.vehicleType || jobDetails?.vehical_type) && (
+                                        <Text className="text-blue-600 font-medium mt-1 capitalize">
+                                            {jobDetails.vehicleType || jobDetails.vehical_type}
+                                        </Text>
+                                    )}
                                 </View>
 
                                 {/* Having an Issue Banner */}
