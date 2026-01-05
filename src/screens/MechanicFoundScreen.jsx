@@ -256,7 +256,7 @@ const MechanicFoundScreen = ({ route }) => {
         });
 
         // Mechanic Location Update - FIX: Backend doc says they don't send IDs back, only location + mechanic_id
-        if (lastMessage.type === 'mechanic_location_update') {
+        if (lastMessage.type === 'mechanic_location') {
             console.log('%c[MechanicFound] 📍 Received Location Push from Server:', 'color: #10b981; font-weight: bold;', {
                 latitude: lastMessage.latitude,
                 longitude: lastMessage.longitude,

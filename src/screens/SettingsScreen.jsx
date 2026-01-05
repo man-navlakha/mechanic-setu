@@ -24,7 +24,7 @@ const SettingsScreen = ({ navigation }) => {
                             // Deletes keys exactly as defined in Dashboard and ServiceRequest
                             await SecureStore.deleteItemAsync('mechanicAcceptedData');
                             await SecureStore.deleteItemAsync('punctureRequestFormData');
-                            
+
                             Alert.alert("Success", "Local data cleared. Return to Dashboard to refresh.");
                         } catch (error) {
                             Alert.alert("Error", "Failed to clear data.");
@@ -38,10 +38,10 @@ const SettingsScreen = ({ navigation }) => {
     const MenuItem = ({ icon, label, onPress, color = "#374151" }) => (
         <TouchableOpacity
             onPress={onPress}
-            className="flex-row items-center justify-between p-4 bg-gray-50 rounded-xl mb-3 border border-gray-100 active:bg-gray-100"
+            className="flex-row items-center justify-between p-2 mb-2 border-y border-gray-100"
         >
             <View className="flex-row items-center space-x-3">
-                <View className="bg-white p-2 rounded-full shadow-sm">
+                <View className=" p-2 ">
                     <Ionicons name={icon} size={20} color={color} />
                 </View>
                 <Text className="text-gray-700 font-medium text-base ml-3">{label}</Text>
