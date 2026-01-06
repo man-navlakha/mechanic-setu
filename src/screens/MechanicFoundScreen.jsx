@@ -76,7 +76,7 @@ const MechanicFoundScreen = ({ route }) => {
         problem: fallbackProblem
     } = route.params || {};
 
-    const { socket, lastMessage, connectionStatus } = useWebSocket();
+    const { socket, lastMessage, connectionStatus, setActiveJobId } = useWebSocket();
     console.log(routeData)
     console.log(paramLocation)
 
@@ -186,6 +186,7 @@ const MechanicFoundScreen = ({ route }) => {
 
                 setMechanic(mech);
                 setRequestId(reqId);
+                setActiveJobId?.(reqId); // Update WebSocket context for heartbeat
 
                 if (mech.current_latitude) {
                     setMechanicLocation({
@@ -208,6 +209,7 @@ const MechanicFoundScreen = ({ route }) => {
                     const parsed = JSON.parse(saved);
                     setMechanic(parsed.mechanic);
                     setRequestId(parsed.request_id);
+                    setActiveJobId?.(parsed.request_id); // Update WebSocket context for heartbeat
                     setUserLocation(parsed.user_location);
                 }
             }
@@ -255,23 +257,33 @@ const MechanicFoundScreen = ({ route }) => {
             fullMessage: lastMessage
         });
 
-        // Mechanic Location Update - FIX: Backend doc says they don't send IDs back, only location + mechanic_id
-        if (lastMessage.type === 'mechanic_location') {
-            console.log('%c[MechanicFound] 📍 Received Location Push from Server:', 'color: #10b981; font-weight: bold;', {
+        // Mechanic Location Update - Listen for 'mechanic_location_update' (the actual type sent by backend)
+        if (lastMessage.type === 'mechanic_location_update') {
+            // Verify this is our mechanic (optional safety check)
+            const expectedMechanicId = mechanic?.id;
+            const receivedMechanicId = lastMessage.mechanic_id;
+
+            console.log('%c[MechanicFound] 📍 Received Location Update:', 'color: #10b981; font-weight: bold;', {
                 latitude: lastMessage.latitude,
                 longitude: lastMessage.longitude,
-                mechanic_id: lastMessage.mechanic_id,
+                mechanic_id: receivedMechanicId,
+                expected_mechanic_id: expectedMechanicId,
+                job_id: lastMessage.job_id,
                 timestamp: new Date().toLocaleTimeString()
             });
 
-            // Since server routes this to OUR personal room, we accept it as our mechanic
-            setMechanicLocation({
-                latitude: lastMessage.latitude,
-                longitude: lastMessage.longitude
-            });
-            // Update last location timestamp for connectivity tracking
-            setLastLocationUpdate(Date.now());
-            setIsMechanicConnected(true);
+            // Accept location if mechanic_id matches OR if no mechanic_id check needed (server routed to our room)
+            if (!expectedMechanicId || receivedMechanicId === expectedMechanicId) {
+                setMechanicLocation({
+                    latitude: parseFloat(lastMessage.latitude),
+                    longitude: parseFloat(lastMessage.longitude)
+                });
+                // Update last location timestamp for connectivity tracking
+                setLastLocationUpdate(Date.now());
+                setIsMechanicConnected(true);
+            } else {
+                console.warn('[MechanicFound] ⚠️ Mechanic ID mismatch, ignoring location update');
+            }
         }
 
         const msgReqId = String(lastMessage.request_id || lastMessage.job_id);
@@ -282,6 +294,7 @@ const MechanicFoundScreen = ({ route }) => {
                 case 'job_completed':
                     // Show success screen instead of alert
                     setIsJobCompleted(true);
+                    setActiveJobId?.(null); // Clear active job ID
 
                     // Cleanup storage
                     SecureStore.deleteItemAsync(ACTIVE_JOB_STORAGE_KEY);
@@ -296,6 +309,7 @@ const MechanicFoundScreen = ({ route }) => {
                 case 'job_cancelled_notification':
                     // Show cancellation screen
                     setIsJobCancelledState(true);
+                    setActiveJobId?.(null); // Clear active job ID
 
                     // Cleanup storage
                     SecureStore.deleteItemAsync(ACTIVE_JOB_STORAGE_KEY);
@@ -356,7 +370,7 @@ const MechanicFoundScreen = ({ route }) => {
 
         // Check connectivity every 5 seconds
         const CONNECTIVITY_CHECK_INTERVAL = 5000; // 5 seconds
-        const DISCONNECT_THRESHOLD = 30000; // 30 seconds without update = disconnected
+        const DISCONNECT_THRESHOLD = 120000; // 120 seconds without update = disconnected
 
         connectivityCheckInterval.current = setInterval(() => {
             const timeSinceLastUpdate = Date.now() - lastLocationUpdate;

@@ -26,6 +26,8 @@ export const WebSocketProvider = ({ children }) => {
     const messageQueue = useRef([]);
     const isReconnecting = useRef(false);
     const isMounted = useRef(false);
+    const heartbeatInterval = useRef(null); // For periodic heartbeat
+    const activeJobId = useRef(null); // Use ref instead of state to avoid closure issues
 
     // Track mounted state
     useEffect(() => {
@@ -92,6 +94,12 @@ export const WebSocketProvider = ({ children }) => {
                 }
             });
         }
+    }, []);
+
+    // Function to set active job ID
+    const setActiveJobId = useCallback((jobId) => {
+        activeJobId.current = jobId;
+        console.log('[WS-PROVIDER] Active job ID updated:', jobId);
     }, []);
 
     // Exponential backoff reconnect
@@ -161,14 +169,26 @@ export const WebSocketProvider = ({ children }) => {
                 reconnectAttempt.current = 0;
                 setReconnectAttemptCount(0);
 
-                // TEST: Send a ping to verify bidirectional communication
-                try {
-                    const pingMessage = JSON.stringify({ type: 'user_heartbeat', timestamp: Date.now() });
-                    ws.current.send(pingMessage);
-                    console.log('%c[WS-PROVIDER] 📤 Sent test ping:', 'color: #3b82f6;', pingMessage);
-                } catch (err) {
-                    console.error('[WS-PROVIDER] Failed to send ping:', err);
+                // Start periodic heartbeat (every 25 seconds)
+                if (heartbeatInterval.current) {
+                    clearInterval(heartbeatInterval.current);
                 }
+
+                heartbeatInterval.current = setInterval(() => {
+                    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                        try {
+                            const heartbeatMessage = JSON.stringify({
+                                type: 'user_heartbeat',
+                                timestamp: Date.now(),
+                                job_id: activeJobId.current // Include active job ID if available
+                            });
+                            ws.current.send(heartbeatMessage);
+                            console.log('%c[WS-PROVIDER] 💓 Heartbeat sent:', 'color: #3b82f6;', { job_id: activeJobId.current });
+                        } catch (err) {
+                            console.error('[WS-PROVIDER] Failed to send heartbeat:', err);
+                        }
+                    }
+                }, 25000); // Every 25 seconds
 
                 // Flush any queued messages
                 flushMessageQueue();
@@ -316,6 +336,7 @@ export const WebSocketProvider = ({ children }) => {
         return () => {
             if (reconnectInterval.current) clearInterval(reconnectInterval.current);
             if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+            if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
 
             if (ws.current) {
                 console.log('[WS-PROVIDER] Provider unmounting. Closing WebSocket.');
@@ -331,8 +352,9 @@ export const WebSocketProvider = ({ children }) => {
         connectionStatus,
         sendMessage,
         queueSize,
-        reconnectAttempt: reconnectAttemptCount
-    }), [socket, lastMessage, connectionStatus, sendMessage, queueSize, reconnectAttemptCount]);
+        reconnectAttempt: reconnectAttemptCount,
+        setActiveJobId // Expose function to update active job ID
+    }), [socket, lastMessage, connectionStatus, sendMessage, queueSize, reconnectAttemptCount, setActiveJobId]);
 
     return (
         <WebSocketContext.Provider value={value}>
