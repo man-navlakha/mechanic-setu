@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mechanic Setu",
     "slug": "mechanic-setu",
-    "version": "1.0.6",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/logo-optimized.png",
     "scheme": "mechanicsetu",
@@ -13,7 +13,7 @@
       "config": {
         "googleMapsApiKey": "AIzaSyB41DRUbKW4nM5UPKsNHEMhhPcSilNv3I"
       },
-      "bundleIdentifier": "com.anonymous.mechanicsetu"
+      "bundleIdentifier": "com.man.mechanicsetu"
     },
     "android": {
       "permissions": [
@@ -34,7 +34,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.mechanicsetu"
+      "package": "com.man.mechanicsetu"
     },
     "web": {
       "output": "static",
@@ -82,7 +82,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "27756afd-dd20-446f-848e-203760ffef63"
+        "projectId": "ae4760ff-f8ed-430c-8671-328eadbe5b6c"
       }
     }
   }
