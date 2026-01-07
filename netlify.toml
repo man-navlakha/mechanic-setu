@@ -1,6 +1,6 @@
 [build]
   command = "npm run web:build"
-  publish = "dist"
+  publish = "web-build"
 
 [[redirects]]
   from = "/*"
@@ -9,3 +9,4 @@
 
 [build.environment]
   NODE_VERSION = "18"
+
