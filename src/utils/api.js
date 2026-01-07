@@ -1,5 +1,5 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
+import storage from './storage';
 
 export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://mechanic-setu.onrender.com/api';
 
@@ -33,7 +33,7 @@ api.interceptors.request.use(
         // debugger; 
 
         // Optional: If you need to attach token manually from Store
-        // const token = await SecureStore.getItemAsync('token');
+        // const token = await storage.getItem('token');
         // if (token) config.headers.Authorization = `Bearer ${token}`;
 
         return config;
@@ -86,7 +86,7 @@ api.interceptors.response.use(
                 onRefreshed();
 
                 // Simulating Cookies.set("Logged", true)
-                await SecureStore.setItemAsync("Logged", "true");
+                await storage.setItem("Logged", "true");
 
                 return api(originalRequest);
             } catch (refreshError) {
@@ -94,8 +94,8 @@ api.interceptors.response.use(
                 isRefreshing = false;
 
                 // Clear logged status
-                await SecureStore.setItemAsync("Logged", "false");
-                await SecureStore.deleteItemAsync("otp_ctx");
+                await storage.setItem("Logged", "false");
+                await storage.removeItem("otp_ctx");
 
                 // Redirect only if not already on login page
                 // Expo Router doesn't give synchronous access to current path easily outside of hooks,

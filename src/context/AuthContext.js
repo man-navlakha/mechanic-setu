@@ -1,6 +1,6 @@
-import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import api from '../utils/api';
+import storage from '../utils/storage';
 
 const AuthContext = createContext();
 
@@ -21,11 +21,11 @@ export const AuthProvider = ({ children }) => {
             console.log("[AuthContext] checkAuth: User profile fetched:", res.data);
 
             setUser(res.data);
-            await SecureStore.setItemAsync("Logged", "true");
+            await storage.setItem("Logged", "true");
         } catch (err) {
             console.log("[AuthContext] checkAuth: Not logged in or session expired:", err.message);
             setUser(null);
-            await SecureStore.setItemAsync("Logged", "false");
+            await storage.setItem("Logged", "false");
         } finally {
             setLoading(false);
         }
@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
             };
 
             // Store context if needed for persistence across hard reloads
-            // await SecureStore.setItemAsync('otp_ctx', JSON.stringify(ctx));
+            // await storage.setItem('otp_ctx', JSON.stringify(ctx));
 
             // Note: Components like LoginScreen might handle navigation themselves using the return value.
             // But we can also push here if we are using expo-router exclusively.
@@ -138,8 +138,8 @@ export const AuthProvider = ({ children }) => {
             console.error('[AuthContext] Logout failed on server:', err);
         } finally {
             setUser(null);
-            await SecureStore.deleteItemAsync("Logged");
-            await SecureStore.deleteItemAsync("otp_ctx");
+            await storage.removeItem("Logged");
+            await storage.removeItem("otp_ctx");
             // router.replace('/login'); // Removed: State change handles navigation
         }
     };
