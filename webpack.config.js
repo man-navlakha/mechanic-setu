@@ -28,7 +28,6 @@ module.exports = async function (env, argv) {
                     postcssOptions: {
                         ident: 'postcss',
                         config: true,
-                        plugins: [require('tailwindcss'), require('autoprefixer')],
                     },
                 },
             });
