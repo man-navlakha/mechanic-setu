@@ -13,7 +13,6 @@ import {
     View
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
@@ -22,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ImageAdCard } from '../components/ImageAdCard';
+import MapView, { Marker, PROVIDER_GOOGLE } from '../components/PlatformMap';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../context/WebSocketContext';
 import { getMapAds } from '../utils/adsCache';

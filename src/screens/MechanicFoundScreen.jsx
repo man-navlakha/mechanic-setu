@@ -14,10 +14,10 @@ import {
     TouchableOpacity, View
 } from 'react-native';
 import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming, ZoomIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ImageAdCard } from '../components/ImageAdCard';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../components/PlatformMap';
 import { SafetyToolkit } from '../components/SafetyToolkit';
 import { useWebSocket } from '../context/WebSocketContext';
 import { getMapAds } from '../utils/adsCache';

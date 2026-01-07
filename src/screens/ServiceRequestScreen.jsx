@@ -17,9 +17,9 @@ import {
     View
 } from 'react-native';
 // FIX 1: Explicitly import Marker here
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, { FadeIn, SlideInRight, SlideOutLeft, ZoomIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import MapView, { Marker, PROVIDER_GOOGLE } from '../components/PlatformMap';
 import { getMapAds } from '../utils/adsCache';
 import api from '../utils/api';
 
