@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
-import api, { API_URL } from '../utils/api';
+import storage from '../utils/storage';
 import { useAuth } from './AuthContext';
 
 const WebSocketContext = createContext(null);
@@ -18,6 +18,7 @@ export const WebSocketProvider = ({ children }) => {
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
     const [queueSize, setQueueSize] = useState(0);
     const [reconnectAttemptCount, setReconnectAttemptCount] = useState(0);
+    
     const ws = useRef(null);
     const appState = useRef(AppState.currentState);
     const reconnectInterval = useRef(null);
@@ -28,6 +29,35 @@ export const WebSocketProvider = ({ children }) => {
     const isMounted = useRef(false);
     const heartbeatInterval = useRef(null); // For periodic heartbeat
     const activeJobId = useRef(null); // Use ref instead of state to avoid closure issues
+
+    const getCookieValue = useCallback((name) => {
+        if (typeof document === 'undefined') return null;
+        const match = document.cookie.match(new RegExp(`(^|; )${name}=([^;]*)`));
+        return match ? decodeURIComponent(match[2]) : null;
+    }, []);
+
+    const getAccessToken = useCallback(async () => {
+        // Priority 1: Native storage (SecureStore/AsyncStorage)
+        try {
+            const token = await storage.getItem('access');
+            if (token) return token;
+        } catch (e) {
+            console.error('[WS-PROVIDER] storage.getItem error:', e);
+        }
+
+        // Priority 2: Web fallbacks
+        if (Platform.OS === 'web') {
+            const cookieToken = getCookieValue('access');
+            if (cookieToken) return cookieToken;
+            try {
+                return localStorage.getItem('access');
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        return null;
+    }, [getCookieValue]);
 
     // Track mounted state
     useEffect(() => {
@@ -137,29 +167,21 @@ export const WebSocketProvider = ({ children }) => {
         console.log(`%c[WS-PROVIDER] Starting connection for User: ${user?.email || 'Unknown'} (Attempt: ${reconnectAttempt.current + 1})`, 'color: #8A2BE2;');
 
         try {
-            // 1. Get One-Time Token for WS Auth
-            const res = await api.get("/core/ws-token/");
-            const wsToken = res.data.ws_token;
+            // 1. Read access token from cookies/localStorage (web) or SecureStore (native)
+            const accessToken = await getAccessToken();
+            if (!accessToken) throw new Error("Access token missing for WebSocket connection");
 
-            if (!wsToken) throw new Error("Failed to get WebSocket token");
-
-            // 2. Determine WebSocket URL
-            let wsHost = API_URL.replace(/^https?:\/\//, '').replace(/\/api\/?$/, '');
-            const wsScheme = API_URL.startsWith('https') ? 'wss' : 'ws';
-            const wsUrl = `${wsScheme}://${wsHost}/ws/job_notifications/?token=${wsToken}`;
+            // 2. Determine WebSocket URL (absolute for native)
+            const wsBase = (process.env.EXPO_PUBLIC_WS_BASE || 'wss://mechanic-setu-int0.onrender.com').replace(/\/+$/, '');
+            const wsUrl = `${wsBase}/ws/job_notifications/?token=${encodeURIComponent(accessToken)}`;
 
             console.log(`[WS-PROVIDER] Connecting to: ${wsUrl}`);
-            const origin = `${wsScheme === 'wss' ? 'https' : 'http'}://${wsHost}`;
 
-            if (Platform.OS === 'web') {
-                ws.current = new WebSocket(wsUrl);
-            } else {
-                ws.current = new WebSocket(wsUrl, null, {
-                    headers: {
-                        'Origin': origin
-                    }
-                });
-            }
+            const wsOptions = Platform.OS === 'web' ? undefined : {
+                headers: { Origin: wsBase.replace('wss://', 'https://').replace('ws://', 'http://') }
+            };
+
+            ws.current = new WebSocket(wsUrl, null, wsOptions);
 
             ws.current.onopen = () => {
                 console.log('%c[WS-PROVIDER] ==> Connection successful!', 'color: #008000; font-weight: bold;');
@@ -252,7 +274,7 @@ export const WebSocketProvider = ({ children }) => {
                 scheduleReconnect();
             }
         }
-    }, [isAuthenticated, user, flushMessageQueue, scheduleReconnect]);
+    }, [isAuthenticated, user, flushMessageQueue, scheduleReconnect, getAccessToken]);
 
     // 1. Monitor Auth State & Connect/Disconnect
     useEffect(() => {

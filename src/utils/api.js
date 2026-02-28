@@ -1,7 +1,8 @@
 import axios from 'axios';
 import storage from './storage';
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://mechanic-setu.onrender.com/api';
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://mechanic-setu-backend.vercel.app/api';
+export const WS_API_URL = process.env.EXPO_PUBLIC_WS_API_URL || 'https://mechanic-setu-int0.onrender.com/api';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -10,9 +11,25 @@ const api = axios.create({
     xsrfHeaderName: 'X-CSRFToken',
 });
 
+export const wsApi = axios.create({
+    baseURL: WS_API_URL,
+    withCredentials: true,
+    xsrfCookieName: 'csrftoken',
+    xsrfHeaderName: 'X-CSRFToken',
+});
+
 // Flags to avoid loops
 let isRefreshing = false;
 let refreshSubscribers = [];
+
+// Persist tokens returned by backend
+const saveTokens = async (data) => {
+    if (!data || typeof data !== 'object') return;
+    const access = data.access || data.access_token;
+    const refresh = data.refresh || data.refresh_token;
+    if (access) await storage.setItem('access', access);
+    if (refresh) await storage.setItem('refresh', refresh);
+};
 
 // Retry queued requests after refresh
 function onRefreshed() {
@@ -79,7 +96,8 @@ api.interceptors.response.use(
 
             try {
                 console.log("Attempting to refresh token...");
-                await axios.post(`${API_URL}/core/token/refresh/`, {}, { withCredentials: true });
+                const refreshResponse = await axios.post(`${API_URL}/core/token/refresh/`, {}, { withCredentials: true });
+                await saveTokens(refreshResponse.data);
                 console.log("Token refresh successful.");
 
                 isRefreshing = false;

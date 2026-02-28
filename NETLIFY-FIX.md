@@ -118,7 +118,7 @@
 1. Go to Site Settings → Environment Variables
 2. Add variable:
    - **Key**: `EXPO_PUBLIC_API_URL`
-   - **Value**: `https://mechanic-setu.onrender.com/api`
+   - **Value**: `https://mechanic-setu-int0.onrender.com/api`
 3. Redeploy
 
 ### Issue 5: Maps Not Loading

@@ -11,6 +11,15 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
+    const storeAuthTokens = useCallback(async (data) => {
+        if (!data || typeof data !== 'object') return;
+        const access = data.access || data.access_token;
+        const refresh = data.refresh || data.refresh_token;
+
+        if (access) await storage.setItem('access', access);
+        if (refresh) await storage.setItem('refresh', refresh);
+    }, []);
+
     // Debugging hook to check router availability
     // Check Login Status & Fetch Profile
     const checkAuth = useCallback(async () => {
@@ -44,6 +53,7 @@ export const AuthProvider = ({ children }) => {
             console.log(`[AuthContext] Sending POST to /users/Login_SignUp/`);
             const res = await api.post('/users/Login_SignUp/', { email });
             console.log("[AuthContext] Login API response:", res.data);
+            await storeAuthTokens(res.data);
 
             // Navigate to Verify
             const ctx = {
@@ -77,6 +87,7 @@ export const AuthProvider = ({ children }) => {
         try {
             const res = await api.post("/users/google/", { token });
             console.log("[AuthContext] Google login success:", res.data);
+            await storeAuthTokens(res.data);
 
             if (res.data.status === 'New User') {
                 // Use router if available, or return logic
@@ -98,7 +109,8 @@ export const AuthProvider = ({ children }) => {
         console.log(`[AuthContext] verifyOtp: ${otp}`);
         try {
             const payload = { key, id, otp };
-            await api.post('/users/otp-verify/', payload);
+            const res = await api.post('/users/otp-verify/', payload);
+            await storeAuthTokens(res.data);
 
             await checkAuth();
 
@@ -140,6 +152,8 @@ export const AuthProvider = ({ children }) => {
             setUser(null);
             await storage.removeItem("Logged");
             await storage.removeItem("otp_ctx");
+            await storage.removeItem("access");
+            await storage.removeItem("refresh");
             // router.replace('/login'); // Removed: State change handles navigation
         }
     };
