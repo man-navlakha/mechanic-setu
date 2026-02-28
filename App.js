@@ -26,6 +26,7 @@ import ProcessFormScreen from './src/screens/ProcessFormScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import ServiceRequestScreen from './src/screens/ServiceRequestScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import RCInfoScreen from './src/screens/RCInfoScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -62,6 +63,7 @@ const Navigation = () => {
                         <Stack.Screen name="Settings" component={SettingsScreen} />
                         <Stack.Screen name="NearbyMechanics" component={NearbyMechanicsScreen} />
                         <Stack.Screen name="Legal" component={LegalScreen} />
+                        <Stack.Screen name="RCInfo" component={RCInfoScreen} />
                     </>
                 )}
             </Stack.Navigator>

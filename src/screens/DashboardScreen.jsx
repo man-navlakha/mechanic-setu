@@ -21,11 +21,19 @@ const SNAP_POINTS = {
     EXPANDED: height * 0.4,   // Higher on screen (showing more)
 };
 
+const getMechanicCoords = (mech) => {
+    const latitude = Number(mech.shop_latitude || mech.current_latitude || mech.location?.shop?.latitude);
+    const longitude = Number(mech.shop_longitude || mech.current_longitude || mech.location?.shop?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return { latitude, longitude };
+};
+
 const DashboardScreen = ({ navigation }) => {
     const { logout, profile } = useAuth();
     const userProfile = profile || {}; // Safety fallback
 
     const [recentHistory, setRecentHistory] = useState([]);
+    const [nearbyMechanics, setNearbyMechanics] = useState([]);
 
     const [adsData, setAdsData] = useState([]);
     const [selectedAd, setSelectedAd] = useState(null);
@@ -66,14 +74,31 @@ const DashboardScreen = ({ navigation }) => {
             }
 
             const location = await Location.getCurrentPositionAsync({});
+            const latitude = location.coords.latitude;
+            const longitude = location.coords.longitude;
             setRegion({
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
+                latitude,
+                longitude,
                 latitudeDelta: 0.005,
                 longitudeDelta: 0.005,
             });
+            fetchNearbyMechanics(latitude, longitude);
         } catch (err) {
             console.warn("Error getting location:", err);
+        }
+    };
+
+    const fetchNearbyMechanics = async (latitude, longitude) => {
+        try {
+            const res = await api.get('/ms-mechanics/nearby', {
+                params: { latitude, longitude, radius: 10 },
+            });
+            const payload = res.data || {};
+            const mechanics = payload.mechanics || payload.data || [];
+            setNearbyMechanics(Array.isArray(mechanics) ? mechanics : []);
+        } catch (error) {
+            console.error('Failed to fetch nearby mechanics for dashboard:', error);
+            setNearbyMechanics([]);
         }
     };
 
@@ -214,6 +239,22 @@ const DashboardScreen = ({ navigation }) => {
                     showsUserLocation={true}
                     showsMyLocationButton={false}
                 >
+                    {nearbyMechanics.map((mech) => {
+                        const coords = getMechanicCoords(mech);
+                        if (!coords) return null;
+                        const isOnline = mech.status === 'ONLINE';
+                        return (
+                            <Marker
+                                key={`mech-${mech.id || mech.user_id || `${coords.latitude}-${coords.longitude}`}`}
+                                coordinate={coords}
+                                title={mech.full_name || mech.shop_name || 'Mechanic'}
+                                description={mech.shop_address || ''}
+                                pinColor={isOnline ? '#10b981' : '#9ca3af'}
+                                onPress={() => navigation.navigate('NearbyMechanics', { userLocation: region })}
+                            />
+                        );
+                    })}
+
                     {adsData.map((ad) => (
                         <Marker
                             key={`ad-${ad.id}`}
@@ -292,7 +333,7 @@ const DashboardScreen = ({ navigation }) => {
                             {/* Active Job or Request Button */}
                             {activeJob ? (
                                 <TouchableOpacity
-                                    className="w-full p-4 rounded-xl bg-green-500 shadow-lg shadow-green-500/30 active:scale-95 transition-transform mb-8 items-center flex-row justify-between"
+                                    className="w-full p-4 rounded-xl bg-green-500 shadow-lg shadow-green-500/30 active:scale-95 transition-transform mb-4 items-center flex-row justify-between"
                                     onPress={handleOpenActiveJob}
                                 >
                                     <View>
@@ -305,7 +346,7 @@ const DashboardScreen = ({ navigation }) => {
                                 </TouchableOpacity>
                             ) : (
                                 <TouchableOpacity
-                                    className="w-full py-4 rounded-xl bg-blue-500 shadow-lg shadow-blue-500/30 active:scale-95 transition-transform mb-8"
+                                    className="w-full py-4 rounded-xl bg-blue-500 shadow-lg shadow-blue-500/30 active:scale-95 transition-transform mb-4"
                                     onPress={() => navigation.navigate("ServiceRequest")}
                                 >
                                     <LinearGradient
@@ -317,6 +358,23 @@ const DashboardScreen = ({ navigation }) => {
                                     </Text>
                                 </TouchableOpacity>
                             )}
+
+                            {/* RC Info shortcut */}
+                            <TouchableOpacity
+                                className="w-full py-3.5 rounded-xl border border-gray-200 bg-white shadow-sm active:scale-95 transition-transform mb-8 flex-row items-center justify-center space-x-2"
+                                onPress={() => navigation.navigate('RCInfo')}
+                            >
+                                <Ionicons name="car-outline" size={20} color="#2563eb" />
+                                <Text className="text-base font-bold text-blue-700">RC Info Lookup</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                className="w-full py-3.5 rounded-xl border border-gray-200 bg-white shadow-sm active:scale-95 transition-transform mb-8 flex-row items-center justify-center space-x-2"
+                                onPress={() => navigation.navigate('NearbyMechanics', { userLocation: region })}
+                            >
+                                <Ionicons name="navigate-outline" size={20} color="#0f766e" />
+                                <Text className="text-base font-bold text-teal-700">Nearby Mechanics</Text>
+                            </TouchableOpacity>
 
                             {/* Recent Activity Section */}
                             <View className="mb-4">

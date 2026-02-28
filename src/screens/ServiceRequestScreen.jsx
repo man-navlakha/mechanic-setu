@@ -29,7 +29,8 @@ const { width, height } = Dimensions.get('window');
 // --- CONSTANTS ---
 const VEHICLE_TYPES = [
     { id: 'bike', name: 'Bike / Scooter', icon: 'motorbike', library: MaterialCommunityIcons },
-    { id: 'car', name: 'Car / Sedan', icon: 'car-side', library: MaterialCommunityIcons },
+    { id: 'car', name: 'Car', icon: 'car-side', library: MaterialCommunityIcons },
+    { id: 'autoriksha', name: 'Auto Riksha', icon: 'car-side', library: MaterialCommunityIcons },
     { id: 'truck', name: 'Truck / SUV', icon: 'truck', library: MaterialCommunityIcons }
 ];
 
@@ -63,6 +64,49 @@ const PROBLEMS = {
         { name: 'Engine Issue', icon: 'cog' },
         { name: 'Other', icon: 'help-circle' }
     ],
+    autoriksha: [
+        { name: 'Puncture Repair', icon: 'wrench' },
+        { name: 'Air Fill-up', icon: 'air' },
+        { name: 'Battery Issue', icon: 'battery-charging' },
+        { name: 'Fuel Delivery', icon: 'water' },
+        { name: 'Engine Issue', icon: 'cog' },
+        { name: 'Other', icon: 'help-circle' }
+    ],
+};
+
+const normalizeVehicleNumber = (value = '') => value.toUpperCase().replace(/\s/g, '');
+
+const inferVehicleType = (item = {}) => {
+    const text = [
+        item.vehicle_type,
+        item.type,
+        item.class,
+        item.vehicle_class,
+        item.brand_model,
+        item.body_type,
+        item.fuel_type,
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    if (text.includes('auto') || text.includes('rickshaw') || text.includes('riksha')) return 'autoriksha';
+    if (text.includes('bike') || text.includes('scooter') || text.includes('motorcycle') || text.includes('2w')) return 'bike';
+    if (text.includes('truck') || text.includes('suv') || text.includes('bus') || text.includes('pickup') || text.includes('4w heavy')) return 'truck';
+    return 'car';
+};
+
+const normalizeVehicleItem = (item = {}) => {
+    const number = normalizeVehicleNumber(
+        item.vehicle_number ||
+        item.license_plate ||
+        item.registration_number ||
+        item.number ||
+        ''
+    );
+
+    return {
+        ...item,
+        vehicle_number: number,
+        detected_type: inferVehicleType(item),
+    };
 };
 
 const FORM_STORAGE_KEY = 'punctureRequestFormData';
@@ -73,10 +117,16 @@ export default function ServiceRequestScreen() {
     const [showDebugger, setShowDebugger] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [lastResponse, setLastResponse] = useState(null);
+    const [savedVehicles, setSavedVehicles] = useState([]);
+    const [vehicleInput, setVehicleInput] = useState('');
+    const [loadingVehicles, setLoadingVehicles] = useState(false);
+    const [searchingVehicle, setSearchingVehicle] = useState(false);
 
     const mapRef = useRef(null);
     const [formData, setFormData] = useState({
         vehicleType: '',
+        vehicleNumber: '',
+        vehicleDetails: null,
         location: 'Selecting location...',
         latitude: 23.0225,
         longitude: 72.5714,
@@ -109,13 +159,16 @@ export default function ServiceRequestScreen() {
             try {
                 const saved = await SecureStore.getItemAsync(FORM_STORAGE_KEY);
                 if (saved) {
-                    setFormData(JSON.parse(saved));
+                    const parsed = JSON.parse(saved);
+                    setFormData(parsed);
+                    setVehicleInput(parsed.vehicleNumber || '');
                     console.log("[ServiceRequest] Loaded saved drafts.");
                 }
             } catch (e) {
                 console.warn("Failed to load drafts", e);
             }
         })();
+        fetchMyVehicles();
     }, []);
 
     // Save data on change
@@ -125,6 +178,75 @@ export default function ServiceRequestScreen() {
         }, 500);
         return () => clearTimeout(saveTimeout);
     }, [formData]);
+
+    const applyVehicleSelection = (vehicle, source = 'saved') => {
+        const normalized = normalizeVehicleItem(vehicle);
+        setVehicleInput(normalized.vehicle_number || '');
+        setFormData(prev => ({
+            ...prev,
+            vehicleType: normalized.detected_type,
+            vehicleNumber: normalized.vehicle_number || '',
+            vehicleDetails: { ...normalized, source },
+            problem: ''
+        }));
+    };
+
+    const fetchMyVehicles = async () => {
+        setLoadingVehicles(true);
+        try {
+            const res = await api.get('/vehicle/my-vehicles');
+            const list = res.data?.data || res.data?.vehicles || res.data || [];
+            const normalized = Array.isArray(list) ? list.map(normalizeVehicleItem) : [];
+            setSavedVehicles(normalized);
+            return normalized;
+        } catch (error) {
+            console.error('[ServiceRequest] my-vehicles fetch failed:', error);
+            setSavedVehicles([]);
+            return [];
+        } finally {
+            setLoadingVehicles(false);
+        }
+    };
+
+    const lookupVehicleByNumber = async () => {
+        const cleaned = normalizeVehicleNumber(vehicleInput);
+        if (!cleaned) {
+            alert('Enter vehicle number first.');
+            return;
+        }
+
+        setSearchingVehicle(true);
+        try {
+            let vehicles = savedVehicles;
+            if (!vehicles.length) {
+                vehicles = await fetchMyVehicles();
+            }
+
+            const match = vehicles.find(v => normalizeVehicleNumber(v.vehicle_number) === cleaned);
+            if (match) {
+                applyVehicleSelection(match, 'my-vehicles');
+                return;
+            }
+
+            const rc = await api.post('/vehicle/rc-info', { vehicle_number: cleaned });
+            const combined = {
+                ...(rc.data?.data || {}),
+                ...(rc.data || {}),
+                vehicle_number: cleaned,
+            };
+            if (rc.data?.success === false) {
+                alert(rc.data?.message || 'Vehicle not found. You can choose manual type.');
+                return;
+            }
+
+            applyVehicleSelection(combined, 'rc-info');
+        } catch (error) {
+            console.error('[ServiceRequest] rc lookup failed:', error);
+            alert(error.response?.data?.message || 'Unable to fetch vehicle details. Use manual selection.');
+        } finally {
+            setSearchingVehicle(false);
+        }
+    };
 
     const handleNext = () => {
         if (canProceed()) {
@@ -145,6 +267,11 @@ export default function ServiceRequestScreen() {
                 longitude: formData.longitude,
                 location: formData.location || "Custom Pin Location",
                 vehical_type: formData.vehicleType,
+                vehical_details: formData.vehicleDetails || {
+                    vehicle_number: formData.vehicleNumber || '',
+                    source: 'manual',
+                    detected_type: formData.vehicleType,
+                },
                 problem: formData.problem,
                 additional_details: formData.additionalNotes,
             });
@@ -165,6 +292,7 @@ export default function ServiceRequestScreen() {
                     latitude: formData.latitude,
                     longitude: formData.longitude,
                     vehicleType: formData.vehicleType,
+                    vehicleDetails: formData.vehicleDetails,
                     problem: formData.problem
                 });
                 // Reset state after navigation (optional, but good practice if user comes back)
@@ -179,7 +307,7 @@ export default function ServiceRequestScreen() {
     };
 
     const canProceed = () => {
-        if (step === 1) return !!formData.vehicleType;
+        if (step === 1) return !!formData.vehicleType && (!!formData.vehicleDetails || !!formData.vehicleNumber);
         if (step === 2) return true;
         if (step === 3) return !!formData.problem;
         if (step === 4) return true; // Notes are optional
@@ -252,34 +380,96 @@ export default function ServiceRequestScreen() {
     const renderStep1 = () => (
         <Animated.View entering={SlideInRight} exiting={SlideOutLeft} className="flex-1 px-4 pt-4">
             <Text className="text-2xl font-bold text-gray-900 mb-2">Select Vehicle</Text>
-            <Text className="text-gray-500 mb-6">Choose the vehicle you need help with.</Text>
+            <Text className="text-gray-500 mb-4">Use saved vehicles first, then RC lookup by number, or choose manual type.</Text>
 
-            <View className="flex-row flex-wrap justify-between">
-                {VEHICLE_TYPES.map((v) => {
-                    const isSelected = formData.vehicleType === v.id;
-                    return (
-                        <TouchableOpacity
-                            key={v.id}
-                            onPress={() => setFormData({ ...formData, vehicleType: v.id, problem: '' })}
-                            className={`w-[48%] mb-4 p-4 rounded-2xl border-2 items-center justify-center h-40 shadow-sm ${isSelected ? 'bg-blue-50 border-blue-500' : 'bg-white border-gray-100'}`}
-                        >
-                            <v.library
-                                name={v.icon}
-                                size={48}
-                                color={isSelected ? '#3b82f6' : '#9ca3af'}
-                            />
-                            <Text className={`mt-4 font-bold ${isSelected ? 'text-blue-700' : 'text-gray-600'}`}>
-                                {v.name}
-                            </Text>
-                            {isSelected && (
-                                <View className="absolute top-3 right-3 bg-blue-500 rounded-full p-1">
-                                    <Ionicons name="checkmark" size={12} color="white" />
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    );
-                })}
+            <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-4 shadow-sm">
+                <Text className="text-gray-500 text-xs uppercase tracking-wider font-bold mb-2">Vehicle Number</Text>
+                <TextInput
+                    className="border border-gray-200 rounded-xl px-4 py-3 text-gray-900 font-semibold tracking-widest mb-3"
+                    placeholder="e.g. GJ27AA3978"
+                    value={vehicleInput}
+                    onChangeText={setVehicleInput}
+                    autoCapitalize="characters"
+                />
+                <TouchableOpacity
+                    onPress={lookupVehicleByNumber}
+                    disabled={searchingVehicle}
+                    className={`py-3 rounded-xl items-center ${searchingVehicle ? 'bg-blue-300' : 'bg-blue-600'}`}
+                >
+                    {searchingVehicle ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold">Find Vehicle</Text>}
+                </TouchableOpacity>
             </View>
+
+            <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-gray-600 font-bold">My Vehicles</Text>
+                <TouchableOpacity onPress={fetchMyVehicles}>
+                    <Text className="text-blue-600 font-semibold">Refresh</Text>
+                </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 80 }}>
+                {loadingVehicles ? (
+                    <View className="bg-white rounded-xl p-4 border border-gray-100 mb-4 items-center">
+                        <ActivityIndicator color="#3b82f6" />
+                        <Text className="text-gray-500 mt-2">Loading saved vehicles...</Text>
+                    </View>
+                ) : savedVehicles.length > 0 ? (
+                    <View className="mb-4">
+                        {savedVehicles.map((v, idx) => {
+                            const selected = normalizeVehicleNumber(formData.vehicleNumber) === normalizeVehicleNumber(v.vehicle_number);
+                            return (
+                                <TouchableOpacity
+                                    key={`${v.vehicle_number || 'vehicle'}-${idx}`}
+                                    onPress={() => applyVehicleSelection(v, 'my-vehicles')}
+                                    className={`bg-white rounded-xl border p-4 mb-2 ${selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100'}`}
+                                >
+                                    <View className="flex-row items-center justify-between">
+                                        <View>
+                                            <Text className="text-gray-900 font-bold">{v.vehicle_number || 'N/A'}</Text>
+                                            <Text className="text-gray-500 text-xs">{(v.brand_model || v.brand_name || v.class || 'Vehicle').toString()}</Text>
+                                        </View>
+                                        <Text className="text-xs font-bold text-blue-700 uppercase">{v.detected_type}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+                ) : (
+                    <View className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+                        <Text className="text-amber-700 text-sm">No saved vehicles found. Use RC lookup or manual type.</Text>
+                    </View>
+                )}
+
+                <Text className="text-gray-600 font-bold mb-3">Manual Selection</Text>
+                <View className="flex-row flex-wrap justify-between">
+                    {VEHICLE_TYPES.map((v) => {
+                        const isSelected = formData.vehicleType === v.id;
+                        return (
+                            <TouchableOpacity
+                                key={v.id}
+                                onPress={() => setFormData(prev => ({
+                                    ...prev,
+                                    vehicleType: v.id,
+                                    vehicleDetails: {
+                                        ...(prev.vehicleDetails || {}),
+                                        vehicle_number: normalizeVehicleNumber(vehicleInput || prev.vehicleNumber || ''),
+                                        source: 'manual',
+                                        detected_type: v.id,
+                                    },
+                                    vehicleNumber: normalizeVehicleNumber(vehicleInput || prev.vehicleNumber || ''),
+                                    problem: ''
+                                }))}
+                                className={`w-[48%] mb-4 p-4 rounded-2xl border-2 items-center justify-center h-32 shadow-sm ${isSelected ? 'bg-blue-50 border-blue-500' : 'bg-white border-gray-100'}`}
+                            >
+                                <v.library name={v.icon} size={36} color={isSelected ? '#3b82f6' : '#9ca3af'} />
+                                <Text className={`mt-3 font-bold text-center ${isSelected ? 'text-blue-700' : 'text-gray-600'}`}>
+                                    {v.name}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+            </ScrollView>
         </Animated.View>
     );
 
@@ -441,7 +631,15 @@ export default function ServiceRequestScreen() {
                         <View>
                             <Text className="text-gray-500 text-xs uppercase tracking-wider font-bold">Vehicle Type</Text>
                             <Text className="text-gray-900 font-bold text-lg capitalize">{formData.vehicleType}</Text>
+                            {formData.vehicleNumber ? (
+                                <Text className="text-gray-500 text-xs mt-1">No: {formData.vehicleNumber}</Text>
+                            ) : null}
                         </View>
+                    </View>
+
+                    <View className="mb-4">
+                        <Text className="text-gray-500 text-xs uppercase tracking-wider font-bold mb-1">Vehicle Details Source</Text>
+                        <Text className="text-gray-900 font-medium capitalize">{formData.vehicleDetails?.source || 'manual'}</Text>
                     </View>
 
                     <View>
