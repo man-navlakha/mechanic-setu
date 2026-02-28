@@ -11,12 +11,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '628591285290-agf9c8nrjbcfa9onq3tr7d6dubjjo0g9.apps.googleusercontent.com';
-const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '628591285290-r3aqromleta587fqqfeliddd6tiaimue.apps.googleusercontent.com';
 const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '628591285290-g5sv4vic3pjqbg174go04dc2cultrpcl.apps.googleusercontent.com';
 
 GoogleSignin.configure({
     webClientId: GOOGLE_WEB_CLIENT_ID,
-    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
     iosClientId: GOOGLE_IOS_CLIENT_ID,
     scopes: ['profile', 'email'],
     offlineAccess: false,
@@ -30,6 +28,18 @@ export default function LoginScreen({ navigation }) {
     const { login, googleLogin, isAuthenticated } = useAuth();
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        console.log('GoogleSignin config:', {
+            webClientId: GOOGLE_WEB_CLIENT_ID,
+            iosClientId: GOOGLE_IOS_CLIENT_ID,
+        });
+        console.log('App identifiers:', {
+            androidPackage: Constants.expoConfig?.android?.package,
+            iosBundleId: Constants.expoConfig?.ios?.bundleIdentifier,
+            scheme: Constants.expoConfig?.scheme,
+        });
+    }, []);
 
     // Check session on mount
     useEffect(() => {
@@ -90,9 +100,29 @@ export default function LoginScreen({ navigation }) {
     const handleGoogleLogin = async () => {
         try {
             setLoading(true);
+            console.log('GoogleSignin: starting sign-in');
             await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-            const userInfo = await GoogleSignin.signIn();
-            const idToken = userInfo.idToken;
+            try {
+                console.log('GoogleSignin: revoking access + signing out to force account chooser');
+                await GoogleSignin.revokeAccess();
+                await GoogleSignin.signOut();
+            } catch (err) {
+                console.log('GoogleSignin: signOut skipped', err?.message || err);
+            }
+            const signInResponse = await GoogleSignin.signIn();
+            console.log('GoogleSignin: response keys', Object.keys(signInResponse || {}));
+            if (signInResponse?.type === 'cancelled') {
+                return;
+            }
+            const userInfo = signInResponse?.type === 'success' ? signInResponse.data : signInResponse;
+            console.log('GoogleSignin: userInfo keys', Object.keys(userInfo || {}));
+            const idToken = userInfo?.idToken;
+            console.log('GoogleSignin: response', {
+                type: signInResponse?.type,
+                hasIdToken: Boolean(idToken),
+                email: userInfo?.user?.email,
+                hasServerAuthCode: Boolean(userInfo?.serverAuthCode),
+            });
             if (!idToken) {
                 throw new Error('Google did not return an ID token.');
             }
@@ -104,6 +134,11 @@ export default function LoginScreen({ navigation }) {
             if (statusCodes.SIGN_IN_CANCELLED === err?.code) {
                 return;
             }
+            console.error('GoogleSignin error:', {
+                code: err?.code,
+                message: err?.message,
+                nativeStackAndroid: err?.nativeStackAndroid,
+            });
             const msg = err?.response?.data?.detail || err?.message || 'Google login failed. Please try again.';
             Alert.alert('Google Login Failed', msg);
         } finally {
@@ -149,14 +184,9 @@ export default function LoginScreen({ navigation }) {
                                 <Text className="text-white font-bold text-lg">{loading ? 'Processing...' : 'Continue'}</Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity
-                                onPress={handleGoogleLogin}
-                                disabled={loading}
-                                className={`w-full py-4 rounded-xl items-center justify-center border ${loading ? 'border-gray-300 bg-gray-100' : 'border-gray-300 bg-white'}`}
-                            >
-                                <Text className="text-gray-900 font-bold text-lg">Continue with Google</Text>
-                            </TouchableOpacity>
-                            <GoogleSigninButton onPress={handleGoogleLogin} disabled={loading} />
+                          
+                            <GoogleSigninButton  className={`w-full py-4 rounded-xl my-4 items-center justify-center border ${loading ? 'border-gray-300 bg-gray-100' : 'border-gray-300 bg-white'}`}
+                             onPress={handleGoogleLogin} disabled={loading} />
                         </View>
                     </View>
                 </ScrollView>
