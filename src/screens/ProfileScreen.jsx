@@ -12,6 +12,8 @@ const ProfileScreen = ({ navigation }) => {
     const [allHistory, setAllHistory] = useState([]);
     // Stores the currently displayed list
     const [history, setHistory] = useState([]);
+    const [vehicles, setVehicles] = useState([]);
+    const [loadingVehicles, setLoadingVehicles] = useState(false);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
@@ -27,8 +29,10 @@ const ProfileScreen = ({ navigation }) => {
         try {
             // Refresh global auth user to get latest profile
             await checkAuth();
-            // Fetch history locally
-            await fetchHistory();
+            await Promise.all([
+                fetchHistory(),
+                fetchVehicles(),
+            ]);
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -37,6 +41,20 @@ const ProfileScreen = ({ navigation }) => {
 
     // Use authUser from context as the primary source of truth
     const userData = authUser || {};
+
+    const fetchVehicles = async () => {
+        setLoadingVehicles(true);
+        try {
+            const res = await api.get('/vehicle/my-vehicles');
+            const list = res.data?.data || res.data?.vehicles || res.data || [];
+            setVehicles(Array.isArray(list) ? list : []);
+        } catch (err) {
+            console.error('My vehicles fetch error:', err);
+            setVehicles([]);
+        } finally {
+            setLoadingVehicles(false);
+        }
+    };
 
     const fetchHistory = async () => {
         try {
@@ -196,6 +214,38 @@ const ProfileScreen = ({ navigation }) => {
                         </View>
                     </View>
 
+                    {/* My Vehicles */}
+                    <View className="mb-8">
+                        <Text className="text-xl font-bold text-gray-900 mb-4">My Vehicles</Text>
+                        {loadingVehicles ? (
+                            <View className="items-center py-8 bg-gray-50 rounded-xl border border-gray-200">
+                                <ActivityIndicator size="small" color="#2563eb" />
+                                <Text className="text-gray-400 mt-2">Loading vehicles...</Text>
+                            </View>
+                        ) : vehicles.length > 0 ? (
+                            vehicles.map((vehicle, idx) => {
+                                const number = vehicle.vehicle_number || vehicle.license_plate || vehicle.registration_number || vehicle.number || 'N/A';
+                                const model = vehicle.brand_model || vehicle.brand_name || vehicle.class || vehicle.vehicle_type || 'Vehicle';
+                                return (
+                                    <View key={`${number}-${idx}`} className="bg-white rounded-2xl p-4 mb-3 shadow-sm border border-gray-100">
+                                        <View className="flex-row items-center justify-between">
+                                            <View className="flex-1 mr-3">
+                                                <Text className="text-gray-900 font-bold text-base">{number}</Text>
+                                                <Text className="text-gray-500 text-sm mt-1">{model}</Text>
+                                            </View>
+                                            <Ionicons name="car-sport" size={20} color="#2563eb" />
+                                        </View>
+                                    </View>
+                                );
+                            })
+                        ) : (
+                            <View className="items-center py-8 bg-gray-50 rounded-xl border-dashed border-2 border-gray-200">
+                                <Ionicons name="car-outline" size={36} color="#d1d5db" />
+                                <Text className="text-gray-400 mt-2">No vehicles found</Text>
+                            </View>
+                        )}
+                    </View>
+
                     {/* History Section */}
                     <View className="mb-4">
                         <Text className="text-xl font-bold text-gray-900 mb-4">Service History</Text>
@@ -237,3 +287,6 @@ const ProfileScreen = ({ navigation }) => {
 };
 
 export default ProfileScreen;
+
+
+
